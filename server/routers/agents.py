@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 
 
 class StatusUpdate(BaseModel):
-    status: str
+    status: Literal["active", "stopped"]
 
 
 class ParentUpdate(BaseModel):
@@ -64,11 +64,11 @@ def update_parent(session_id: str, body: ParentUpdate, db: DBSession = Depends(g
 
 
 class ModelUpdate(BaseModel):
-    model: Optional[str] = None
+    model: str
 
 
 class NotesUpdate(BaseModel):
-    notes: Optional[str] = None
+    notes: str
 
 
 @router.patch("/{session_id}/model", response_model=SessionOut)
