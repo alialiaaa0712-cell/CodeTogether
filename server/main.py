@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from server.database import Base, engine
 from server.routers import agents, chat, events, memory
@@ -27,6 +29,9 @@ app.add_middleware(
 
 manager = ConnectionManager()
 app.state.ws_manager = manager
+
+_mobile_dir = Path(__file__).parent.parent / "mobile"
+app.mount("/mobile", StaticFiles(directory=str(_mobile_dir), html=True), name="mobile")
 
 app.include_router(agents.router)
 app.include_router(events.router)
