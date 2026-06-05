@@ -244,3 +244,138 @@ def test_stop_invalid_json_no_crash():
         m.main()
     mock_post.assert_not_called()
     mock_mark.assert_not_called()
+
+
+# ============================================================
+# pre_tool.py
+# ============================================================
+
+def import_pre_tool():
+    import hooks.pre_tool as m
+    importlib.reload(m)
+    return m
+
+
+def test_pre_tool_posts_event():
+    m = import_pre_tool()
+    with mock.patch("hooks._common.post_event") as mock_post, \
+         mock.patch("hooks._common.poll_messages", return_value=[]), \
+         mock.patch("hooks._common.search_memory", return_value=[]), \
+         mock.patch("sys.stdin") as mock_stdin:
+        mock_stdin.read.return_value = json.dumps({
+            "session_id": "s1",
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "cwd": "/Users/user/myproject",
+        })
+        m.main()
+    mock_post.assert_called_once()
+    payload = mock_post.call_args[0][0]
+    assert payload["session_id"] == "s1"
+    assert payload["type"] == "pre_tool"
+    assert payload["tool_name"] == "Bash"
+
+
+def test_pre_tool_prints_messages(capsys):
+    m = import_pre_tool()
+    messages = [{"content": "请帮我优化这段代码"}, {"content": "记得加测试"}]
+    with mock.patch("hooks._common.post_event"), \
+         mock.patch("hooks._common.poll_messages", return_value=messages), \
+         mock.patch("hooks._common.search_memory", return_value=[]), \
+         mock.patch("sys.stdin") as mock_stdin:
+        mock_stdin.read.return_value = json.dumps({
+            "session_id": "s1",
+            "tool_name": "Bash",
+            "tool_input": {},
+            "cwd": "/project",
+        })
+        m.main()
+    out = capsys.readouterr().out
+    assert "请帮我优化这段代码" in out
+    assert "记得加测试" in out
+    assert "[CodeTogether 消息]" in out
+
+
+def test_pre_tool_prints_memories(capsys):
+    m = import_pre_tool()
+    memories = [{"title": "Bash 最佳实践", "content": "总是用 set -e"}]
+    with mock.patch("hooks._common.post_event"), \
+         mock.patch("hooks._common.poll_messages", return_value=[]), \
+         mock.patch("hooks._common.search_memory", return_value=memories), \
+         mock.patch("sys.stdin") as mock_stdin:
+        mock_stdin.read.return_value = json.dumps({
+            "session_id": "s1",
+            "tool_name": "Bash",
+            "tool_input": {},
+            "cwd": "/project",
+        })
+        m.main()
+    out = capsys.readouterr().out
+    assert "Bash 最佳实践" in out
+    assert "总是用 set -e" in out
+    assert "[CodeTogether 记忆]" in out
+
+
+def test_pre_tool_search_uses_tool_name_as_query():
+    m = import_pre_tool()
+    with mock.patch("hooks._common.post_event"), \
+         mock.patch("hooks._common.poll_messages", return_value=[]), \
+         mock.patch("hooks._common.search_memory", return_value=[]) as mock_search, \
+         mock.patch("sys.stdin") as mock_stdin:
+        mock_stdin.read.return_value = json.dumps({
+            "session_id": "s1",
+            "tool_name": "Edit",
+            "tool_input": {},
+            "cwd": "/Users/user/myproject",
+        })
+        m.main()
+    mock_search.assert_called_once()
+    call_kwargs = mock_search.call_args
+    query = call_kwargs[0][0] if call_kwargs[0] else call_kwargs[1]["query"]
+    assert "Edit" in query
+
+
+def test_pre_tool_cwd_infers_project_id():
+    m = import_pre_tool()
+    with mock.patch("hooks._common.post_event"), \
+         mock.patch("hooks._common.poll_messages", return_value=[]), \
+         mock.patch("hooks._common.search_memory", return_value=[]) as mock_search, \
+         mock.patch("sys.stdin") as mock_stdin:
+        mock_stdin.read.return_value = json.dumps({
+            "session_id": "s1",
+            "tool_name": "Read",
+            "tool_input": {},
+            "cwd": "/Users/user/myproject",
+        })
+        m.main()
+    call_kwargs = mock_search.call_args
+    project_id = call_kwargs[1].get("project_id") or (call_kwargs[0][1] if len(call_kwargs[0]) > 1 else None)
+    assert project_id == "myproject"
+
+
+def test_pre_tool_child_agent_parent_session():
+    m = import_pre_tool()
+    with mock.patch("hooks._common.post_event") as mock_post, \
+         mock.patch("hooks._common.poll_messages", return_value=[]), \
+         mock.patch("hooks._common.search_memory", return_value=[]), \
+         mock.patch("sys.stdin") as mock_stdin:
+        mock_stdin.read.return_value = json.dumps({
+            "session_id": "parent-uuid",
+            "agent_id": "childabc",
+            "tool_name": "Bash",
+            "tool_input": {},
+            "cwd": "/project",
+        })
+        m.main()
+    payload = mock_post.call_args[0][0]
+    assert payload["session_id"] == "childabc"
+    assert payload["parent_session_id"] == "parent-uuid"
+
+
+def test_pre_tool_invalid_json_no_crash():
+    m = import_pre_tool()
+    with mock.patch("hooks._common.post_event") as mock_post, \
+         mock.patch("sys.stdin") as mock_stdin:
+        mock_stdin.read.return_value = "not json"
+        m.main()
+    mock_post.assert_not_called()
