@@ -131,3 +131,22 @@ def test_mobile_css_contains_mobile_layout_rules(client):
     assert ".view.active" in css
     assert ".card" in css
     assert "padding-bottom: calc(72px + env(safe-area-inset-bottom));" in css
+
+
+def test_mobile_status_script_contains_ws_and_status_endpoints(client):
+    """
+    验证移动端脚本已声明状态页加载与 WebSocket 实时更新所需的关键入口。
+
+    参数:
+        client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
+
+    返回值:
+        无返回值；断言脚本文本中包含状态加载、状态渲染与关键接口路径。
+    """
+    js = client.get("/mobile/app.js").text
+    assert "connectWebSocket" in js
+    assert "loadStatusData" in js
+    assert "renderStatus" in js
+    assert "`/agents`" in js or "/agents" in js
+    assert "`/events`" in js or "/events" in js
+    assert "`/ws`" in js or "/ws" in js
