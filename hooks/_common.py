@@ -66,7 +66,7 @@ def search_memory(query: str, project_id: str = None) -> list:
     搜索相关记忆条目，失败时返回空列表。
 
     参数:
-        query: 搜索词（工具名 + 最近 assistant 消息）
+        query: 搜索词（当前工具名）
         project_id: 限定项目范围（可选）
 
     返回值:
