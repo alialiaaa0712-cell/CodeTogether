@@ -12,7 +12,7 @@ html, body {
 }
 
 body {
-  padding-bottom: 72px;
+  padding-bottom: calc(72px + env(safe-area-inset-bottom));
 }
 
 .topbar {
