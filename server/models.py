@@ -43,6 +43,18 @@ class Session(Base):
     project = relationship("Project", back_populates="sessions")
     events = relationship("Event", back_populates="session")
     messages = relationship("Message", back_populates="session")
+    parent = relationship(
+        "Session",
+        remote_side=[id],
+        foreign_keys=[parent_id],
+        back_populates="children",
+    )
+    children = relationship(
+        "Session",
+        foreign_keys=[parent_id],
+        back_populates="parent",
+        overlaps="parent",
+    )
 
 
 class Event(Base):
@@ -76,6 +88,10 @@ class Message(Base):
     created_at = Column(Float, default=time.time)
 
     session = relationship("Session", back_populates="messages")
+
+    __table_args__ = (
+        Index("ix_messages_session_status", "session_id", "status"),
+    )
 
 
 class Memory(Base):
