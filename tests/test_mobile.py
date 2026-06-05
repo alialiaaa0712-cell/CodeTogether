@@ -59,3 +59,52 @@ def test_mobile_assets_are_served(client):
     assert js.status_code == 200
     assert ".topbar" in css.text
     assert 'console.log("CodeTogether mobile ready")' in js.text
+
+
+def test_mobile_shell_contains_three_tabs(client):
+    """
+    验证移动端页面骨架包含状态、聊天、记忆三个标签按钮。
+
+    参数:
+        client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
+
+    返回值:
+        无返回值；断言页面 HTML 中包含三个标签按钮的唯一标识。
+    """
+    html = client.get("/mobile/index.html").text
+    assert 'id="tab-status"' in html
+    assert 'id="tab-chat"' in html
+    assert 'id="tab-memory"' in html
+
+
+def test_mobile_shell_contains_chat_and_memory_controls(client):
+    """
+    验证移动端页面骨架包含聊天与记忆审核所需的控件。
+
+    参数:
+        client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
+
+    返回值:
+        无返回值；断言页面 HTML 中包含聊天与记忆区域的关键控件。
+    """
+    html = client.get("/mobile/index.html").text
+    assert 'id="chat-session-select"' in html
+    assert 'id="chat-form"' in html
+    assert 'id="memory-list"' in html
+    assert 'id="memory-filter-pending"' in html
+
+
+def test_mobile_css_contains_mobile_layout_rules(client):
+    """
+    验证移动端样式文件包含标签栏、视图切换与卡片布局规则。
+
+    参数:
+        client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
+
+    返回值:
+        无返回值；断言样式文本中包含关键布局类名。
+    """
+    css = client.get("/mobile/style.css").text
+    assert ".tab-bar" in css
+    assert ".view.active" in css
+    assert ".card" in css

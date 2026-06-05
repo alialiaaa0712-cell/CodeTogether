@@ -3,16 +3,65 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="CodeTogether Mobile Web App">
   <title>CodeTogether Mobile</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
-    <h1>CodeTogether Mobile</h1>
+    <div>
+      <h1>CodeTogether</h1>
+      <p class="subtitle">手机查看 Agent 状态、聊天与记忆审核</p>
+    </div>
+    <span id="conn-status" class="conn-status disconnected">未连接</span>
   </header>
+
   <main class="page-shell">
-    <p>loading...</p>
+    <section id="view-status" class="view active">
+      <div class="card">
+        <h2>运行状态</h2>
+        <div id="session-list" class="session-list"></div>
+      </div>
+      <div class="card">
+        <h2>最近事件</h2>
+        <div id="event-list" class="event-list"></div>
+      </div>
+    </section>
+
+    <section id="view-chat" class="view">
+      <div class="card">
+        <label for="chat-session-select">目标 Session</label>
+        <select id="chat-session-select"></select>
+      </div>
+      <div class="card">
+        <h2>聊天历史</h2>
+        <div id="chat-history" class="chat-history"></div>
+      </div>
+      <form id="chat-form" class="chat-form">
+        <textarea id="chat-input" rows="3" placeholder="输入发给 Agent 的消息"></textarea>
+        <button id="chat-send" type="submit">发送</button>
+      </form>
+      <p class="hint">消息会在 Agent 下一次工具调用时送达。</p>
+    </section>
+
+    <section id="view-memory" class="view">
+      <div class="card">
+        <div class="memory-toolbar">
+          <button id="memory-filter-pending" class="pill active" type="button">待审核</button>
+          <button id="memory-filter-active" class="pill" type="button">已启用</button>
+        </div>
+        <div id="memory-list" class="memory-list"></div>
+      </div>
+    </section>
   </main>
+
+  <nav class="tab-bar">
+    <button id="tab-status" class="tab-btn active" data-tab="status" type="button">状态</button>
+    <button id="tab-chat" class="tab-btn" data-tab="chat" type="button">聊天</button>
+    <button id="tab-memory" class="tab-btn" data-tab="memory" type="button">记忆</button>
+  </nav>
+
+  <div id="toast" class="toast"></div>
   <script src="app.js"></script>
 </body>
 </html>
