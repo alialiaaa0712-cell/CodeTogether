@@ -1,5 +1,7 @@
 from fastapi import FastAPI
-from server.routers import agents
+from server.routers import agents, events, chat
 
 app = FastAPI(title="CodeTogether")
 app.include_router(agents.router)
+app.include_router(events.router)
+app.include_router(chat.router)
