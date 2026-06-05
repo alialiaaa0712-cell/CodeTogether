@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import List, Literal, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -41,6 +44,7 @@ def list_sessions(db: DBSession = Depends(get_db)):
 
 @router.patch("/{session_id}/status", response_model=SessionOut)
 def update_status(session_id: str, body: StatusUpdate, db: DBSession = Depends(get_db)):
+    """Stop hook 调用，将会话标记为 stopped；stopped 时异步触发知识提炼。"""
     session = db.get(SessionModel, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")
@@ -49,6 +53,10 @@ def update_status(session_id: str, body: StatusUpdate, db: DBSession = Depends(g
         session.ended_at = time.time()
     db.commit()
     db.refresh(session)
+
+    if body.status == "stopped":
+        _trigger_extraction(session_id, session.project_id)
+
     return session
 
 
@@ -93,3 +101,45 @@ def update_notes(session_id: str, body: NotesUpdate, db: DBSession = Depends(get
     db.commit()
     db.refresh(session)
     return session
+
+
+def _trigger_extraction(session_id: str, project_id: Optional[str]) -> None:
+    """异步触发知识提炼，在后台线程中运行，不阻塞 HTTP 响应。"""
+    import asyncio
+    import threading
+    from server.services.extractor import extract_memories
+    from server.models import Event as EventModel, Memory as MemoryModel
+    from server.database import SessionLocal
+
+    def _run():
+        save_db = SessionLocal()
+        try:
+            recent_events = (
+                save_db.query(EventModel)
+                .filter(EventModel.session_id == session_id)
+                .order_by(EventModel.created_at.desc())
+                .limit(20)
+                .all()
+            )
+            summary_lines = [f"{e.tool_name}: {(e.output or '')[:200]}" for e in recent_events]
+            summary = "\n".join(summary_lines)
+
+            loop = asyncio.new_event_loop()
+            items = loop.run_until_complete(extract_memories(summary, project_id=project_id))
+            loop.close()
+
+            for item in items:
+                save_db.add(MemoryModel(
+                    project_id=item.get("project_id"),
+                    title=item["title"],
+                    content=item["content"],
+                    tags=item.get("tags"),
+                    source_session_id=session_id,
+                ))
+            save_db.commit()
+        except Exception as e:
+            logger.warning("知识提炼后台任务失败: %s", e)
+        finally:
+            save_db.close()
+
+    threading.Thread(target=_run, daemon=True).start()
