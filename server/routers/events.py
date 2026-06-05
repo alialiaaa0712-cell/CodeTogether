@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import List, Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session as DBSession
 
 from server.database import get_db
@@ -13,11 +13,11 @@ router = APIRouter(prefix="/events", tags=["events"])
 
 
 @router.post("", response_model=EventOut)
-def receive_event(body: EventCreate, db: DBSession = Depends(get_db)):
+async def receive_event(body: EventCreate, request: Request, db: DBSession = Depends(get_db)):
     """接收 hook 上报的工具调用事件，会话不存在时自动创建。"""
     if not db.get(SessionModel, body.session_id):
         db.add(SessionModel(id=body.session_id))
-        db.flush()  # 分配 PK，不提交
+        db.flush()
 
     input_str = json.dumps(body.input, ensure_ascii=False) if body.input else None
     event = EventModel(
@@ -31,6 +31,22 @@ def receive_event(body: EventCreate, db: DBSession = Depends(get_db)):
     db.add(event)
     db.commit()
     db.refresh(event)
+
+    try:
+        manager = request.app.state.ws_manager
+        await manager.broadcast({
+            "type": "event",
+            "data": {
+                "id": event.id,
+                "session_id": event.session_id,
+                "type": event.type,
+                "tool_name": event.tool_name,
+                "created_at": event.created_at,
+            }
+        })
+    except Exception:
+        pass
+
     return event
 
 
