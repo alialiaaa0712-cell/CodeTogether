@@ -19,7 +19,7 @@ _PROMPT = """你是一个知识提炼助手。以下是一段 Claude Code Agent 
 {summary}"""
 
 
-async def extract_memories(
+def extract_memories(
     summary: str,
     project_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:

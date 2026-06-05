@@ -105,7 +105,6 @@ def update_notes(session_id: str, body: NotesUpdate, db: DBSession = Depends(get
 
 def _trigger_extraction(session_id: str, project_id: Optional[str]) -> None:
     """异步触发知识提炼，在后台线程中运行，不阻塞 HTTP 响应。"""
-    import asyncio
     import threading
     from server.services.extractor import extract_memories
     from server.models import Event as EventModel, Memory as MemoryModel
@@ -117,16 +116,17 @@ def _trigger_extraction(session_id: str, project_id: Optional[str]) -> None:
             recent_events = (
                 save_db.query(EventModel)
                 .filter(EventModel.session_id == session_id)
-                .order_by(EventModel.created_at.desc())
+                .order_by(EventModel.created_at.asc())
                 .limit(20)
                 .all()
             )
-            summary_lines = [f"{e.tool_name}: {(e.output or '')[:200]}" for e in recent_events]
+            summary_lines = [
+                f"{e.tool_name} input={str(e.input or '')[:100]} output={str(e.output or '')[:150]}"
+                for e in recent_events
+            ]
             summary = "\n".join(summary_lines)
 
-            loop = asyncio.new_event_loop()
-            items = loop.run_until_complete(extract_memories(summary, project_id=project_id))
-            loop.close()
+            items = extract_memories(summary, project_id=project_id)
 
             for item in items:
                 save_db.add(MemoryModel(
