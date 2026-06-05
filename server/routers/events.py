@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session as DBSession
@@ -44,8 +45,8 @@ async def receive_event(body: EventCreate, request: Request, db: DBSession = Dep
                 "created_at": event.created_at,
             }
         })
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).warning("WebSocket 广播失败: %s", exc)
 
     return event
 
