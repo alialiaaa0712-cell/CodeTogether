@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 # 会话相关 schemas
@@ -42,12 +42,29 @@ class EventOut(BaseModel):
     session_id: str
     type: str
     tool_name: Optional[str] = None
-    input: Optional[Dict[str, Any]] = None  # ORM 存 JSON 字符串，路由层负责转换
+    input: Optional[Dict[str, Any]] = None
     output: Optional[str] = None
     duration_ms: Optional[int] = None
     created_at: float
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_input(cls, data: Any) -> Any:
+        """ORM 层 input 存为 JSON 字符串，在 schema 层解析为 dict。"""
+        import json
+        if hasattr(data, "input") and isinstance(data.input, str):
+            try:
+                object.__setattr__(data, "input", json.loads(data.input))
+            except Exception:
+                pass
+        elif isinstance(data, dict) and isinstance(data.get("input"), str):
+            try:
+                data["input"] = json.loads(data["input"])
+            except Exception:
+                pass
+        return data
 
 
 # 消息相关 schemas
