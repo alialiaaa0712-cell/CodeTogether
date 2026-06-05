@@ -1,3 +1,5 @@
+import pytest
+from pydantic import ValidationError
 from server.schemas import (
     SessionCreate, SessionOut,
     EventCreate, EventOut,
@@ -12,3 +14,7 @@ def test_event_create_schema():
 def test_memory_update_schema():
     u = MemoryUpdate(status="active")
     assert u.status == "active"
+
+def test_memory_update_rejects_invalid_status():
+    with pytest.raises(ValidationError):
+        MemoryUpdate(status="deleted")

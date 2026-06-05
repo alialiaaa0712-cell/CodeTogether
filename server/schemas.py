@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 from pydantic import BaseModel, ConfigDict
 
 
@@ -90,4 +90,4 @@ class MemoryOut(BaseModel):
 
 
 class MemoryUpdate(BaseModel):
-    status: str  # "active" | "rejected"
+    status: Literal["active", "rejected"]
