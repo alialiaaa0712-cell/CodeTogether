@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # 会话相关 schemas
@@ -24,8 +24,7 @@ class SessionOut(BaseModel):
     started_at: float
     ended_at: Optional[float] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # 事件相关 schemas
@@ -48,8 +47,7 @@ class EventOut(BaseModel):
     duration_ms: Optional[int] = None
     created_at: float
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # 消息相关 schemas
@@ -65,8 +63,7 @@ class MessageOut(BaseModel):
     status: str
     created_at: float
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # 记忆相关 schemas
@@ -89,8 +86,7 @@ class MemoryOut(BaseModel):
     created_at: float
     activated_at: Optional[float] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MemoryUpdate(BaseModel):
