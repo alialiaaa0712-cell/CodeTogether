@@ -1,3 +1,9 @@
+def test_send_message_session_not_found(client):
+    """发送消息到不存在的会话应返回 404。"""
+    resp = client.post("/chat", json={"session_id": "nonexistent-sess", "content": "hello"})
+    assert resp.status_code == 404
+
+
 def test_send_and_poll_message(client):
     """手机发消息后，hook 轮询应取到该消息并标记为 delivered。"""
     client.post("/agents", json={"id": "sess-chat-001"})
