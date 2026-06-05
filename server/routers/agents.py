@@ -61,3 +61,35 @@ def update_parent(session_id: str, body: ParentUpdate, db: DBSession = Depends(g
     db.commit()
     db.refresh(session)
     return session
+
+
+class ModelUpdate(BaseModel):
+    model: Optional[str] = None
+
+
+class NotesUpdate(BaseModel):
+    notes: Optional[str] = None
+
+
+@router.patch("/{session_id}/model", response_model=SessionOut)
+def update_model(session_id: str, body: ModelUpdate, db: DBSession = Depends(get_db)):
+    """SessionStart hook 上报模型名称。"""
+    session = db.get(SessionModel, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="session not found")
+    session.model = body.model
+    db.commit()
+    db.refresh(session)
+    return session
+
+
+@router.patch("/{session_id}/notes", response_model=SessionOut)
+def update_notes(session_id: str, body: NotesUpdate, db: DBSession = Depends(get_db)):
+    """用户在 Dashboard 添加备注。"""
+    session = db.get(SessionModel, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="session not found")
+    session.notes = body.notes
+    db.commit()
+    db.refresh(session)
+    return session

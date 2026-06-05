@@ -19,3 +19,17 @@ def test_update_parent(client):
     resp = client.patch("/agents/child-001/parent", json={"parent_id": "parent-001"})
     assert resp.status_code == 200
     assert resp.json()["parent_id"] == "parent-001"
+
+def test_update_model(client):
+    """SessionStart hook 上报模型名称。"""
+    client.post("/agents", json={"id": "sess-model-001"})
+    resp = client.patch("/agents/sess-model-001/model", json={"model": "claude-opus-4-7"})
+    assert resp.status_code == 200
+    assert resp.json()["model"] == "claude-opus-4-7"
+
+def test_update_notes(client):
+    """用户添加备注。"""
+    client.post("/agents", json={"id": "sess-notes-001"})
+    resp = client.patch("/agents/sess-notes-001/notes", json={"notes": "这个 Agent 处理了登录模块重构"})
+    assert resp.status_code == 200
+    assert resp.json()["notes"] == "这个 Agent 处理了登录模块重构"
