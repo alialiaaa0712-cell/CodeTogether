@@ -41,6 +41,15 @@ app.include_router(memory.router)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    """
+    处理 WebSocket 连接的建立与断开。
+
+    参数:
+        websocket: FastAPI 提供的 WebSocket 连接对象，用于接收客户端消息并维护连接状态。
+
+    返回值:
+        无返回值；连接关闭后结束协程。
+    """
     await manager.connect(websocket)
     try:
         while True:
@@ -51,6 +60,15 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/")
 def root():
+    """
+    返回服务健康检查信息。
+
+    参数:
+        无。
+
+    返回值:
+        包含服务状态与服务名称的字典。
+    """
     return {"status": "ok", "service": "CodeTogether"}
 
 
