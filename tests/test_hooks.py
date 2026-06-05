@@ -205,3 +205,42 @@ def test_post_tool_invalid_json_no_crash():
             mock_stdin.read.return_value = "not json"
             m.main()
     mock_post.assert_not_called()
+
+
+# ============================================================
+# stop.py
+# ============================================================
+
+def import_stop():
+    import hooks.stop as m
+    importlib.reload(m)
+    return m
+
+
+def test_stop_posts_event_and_marks_stopped():
+    m = import_stop()
+    with mock.patch("hooks._common.post_event") as mock_post, \
+         mock.patch("hooks._common.mark_stopped") as mock_mark, \
+         mock.patch("sys.stdin") as mock_stdin:
+        mock_stdin.read.return_value = json.dumps({
+            "session_id": "sess-99",
+            "cwd": "/project",
+        })
+        m.main()
+    mock_post.assert_called_once()
+    payload = mock_post.call_args[0][0]
+    assert payload["session_id"] == "sess-99"
+    assert payload["type"] == "stop"
+    assert payload["cwd"] == "/project"
+    mock_mark.assert_called_once_with("sess-99")
+
+
+def test_stop_invalid_json_no_crash():
+    m = import_stop()
+    with mock.patch("hooks._common.post_event") as mock_post, \
+         mock.patch("hooks._common.mark_stopped") as mock_mark, \
+         mock.patch("sys.stdin") as mock_stdin:
+        mock_stdin.read.return_value = "bad json"
+        m.main()
+    mock_post.assert_not_called()
+    mock_mark.assert_not_called()
