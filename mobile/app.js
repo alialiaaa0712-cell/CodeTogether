@@ -317,12 +317,10 @@ function connectWebSocket() {
  */
 async function init() {
   setConnectionStatus(false);
-  renderSessionOptions();
-  renderStatus();
-  renderChatHistory();
-  renderMemories();
   await loadStatusData();
   connectWebSocket();
+  renderChatHistory();
+  renderMemories();
 }
 
 dom.tabButtons.forEach((btn) => {

@@ -51,14 +51,15 @@ def test_mobile_assets_are_served(client):
         client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
 
     返回值:
-        无返回值；断言样式与脚本资源响应成功且内容符合预期。
+        无返回值；断言样式与脚本资源响应成功且脚本包含 Task 3 状态页入口。
     """
     css = client.get("/mobile/style.css")
     js = client.get("/mobile/app.js")
     assert css.status_code == 200
     assert js.status_code == 200
     assert ".topbar" in css.text
-    assert 'console.log("CodeTogether mobile ready")' in js.text
+    assert "async function init()" in js.text
+    assert "setConnectionStatus(false);" in js.text
 
 
 def test_mobile_shell_contains_core_views_and_tabs(client):
@@ -133,20 +134,27 @@ def test_mobile_css_contains_mobile_layout_rules(client):
     assert "padding-bottom: calc(72px + env(safe-area-inset-bottom));" in css
 
 
-def test_mobile_status_script_contains_ws_and_status_endpoints(client):
+def test_mobile_status_script_contains_task3_contract(client):
     """
-    验证移动端脚本已声明状态页加载与 WebSocket 实时更新所需的关键入口。
+    验证移动端脚本符合 Task 3 的状态页契约，而不会提前接入 Task 4/5 的真实能力。
 
     参数:
         client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
 
     返回值:
-        无返回值；断言脚本文本中包含状态加载、状态渲染与关键接口路径。
+        无返回值；断言脚本文本中包含状态接口、初始化顺序与聊天/记忆占位实现。
     """
     js = client.get("/mobile/app.js").text
-    assert "connectWebSocket" in js
-    assert "loadStatusData" in js
-    assert "renderStatus" in js
-    assert "`/agents`" in js or "/agents" in js
-    assert "`/events`" in js or "/events" in js
-    assert "`/ws`" in js or "/ws" in js
+    assert 'new WebSocket(WS_URL)' in js
+    assert 'fetchJson(`${SERVER}/agents`)' in js
+    assert 'fetchJson(`${SERVER}/events`)' in js
+    assert 'setConnectionStatus(false);' in js
+    assert 'await loadStatusData();' in js
+    assert 'connectWebSocket();' in js
+    assert js.index('setConnectionStatus(false);') < js.index('await loadStatusData();') < js.index('connectWebSocket();')
+    assert '聊天能力将在后续任务中接入' in js
+    assert '请在后续任务中实现聊天渲染' in js
+    assert '请在后续任务中实现记忆渲染' in js
+    assert '/chat/send' not in js
+    assert '/memory/approve' not in js
+    assert '/memory/reject' not in js
