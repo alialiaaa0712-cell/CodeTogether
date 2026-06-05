@@ -117,3 +117,91 @@ def test_mark_stopped_silent_on_error():
     m = import_common()
     with mock.patch("urllib.request.urlopen", side_effect=Exception("conn refused")):
         m.mark_stopped("sess-1")  # 不抛异常
+
+
+# ============================================================
+# post_tool.py
+# ============================================================
+
+def import_post_tool():
+    import hooks.post_tool as m
+    importlib.reload(m)
+    return m
+
+
+def run_hook(module, stdin_data: dict):
+    """辅助：将 stdin_data 注入 hook 的 main() 并捕获 post_event 调用。"""
+    with mock.patch("hooks._common.post_event") as mock_post:
+        with mock.patch("sys.stdin") as mock_stdin:
+            mock_stdin.read.return_value = json.dumps(stdin_data)
+            module.main()
+    return mock_post
+
+
+def test_post_tool_bash_output():
+    m = import_post_tool()
+    mock_post = run_hook(m, {
+        "session_id": "s1",
+        "tool_name": "Bash",
+        "tool_input": {"command": "ls"},
+        "tool_response": {"stdout": "file.py\n", "stderr": "", "interrupted": False},
+        "cwd": "/project",
+    })
+    mock_post.assert_called_once()
+    payload = mock_post.call_args[0][0]
+    assert payload["session_id"] == "s1"
+    assert payload["type"] == "post_tool"
+    assert payload["tool_name"] == "Bash"
+    assert "file.py" in payload["output"]
+    assert payload["parent_session_id"] is None
+
+
+def test_post_tool_with_stderr():
+    m = import_post_tool()
+    mock_post = run_hook(m, {
+        "session_id": "s1",
+        "tool_name": "Bash",
+        "tool_input": {"command": "bad"},
+        "tool_response": {"stdout": "", "stderr": "error msg", "interrupted": False},
+        "cwd": "/project",
+    })
+    payload = mock_post.call_args[0][0]
+    assert "[stderr]" in payload["output"]
+
+
+def test_post_tool_child_agent():
+    m = import_post_tool()
+    mock_post = run_hook(m, {
+        "session_id": "parent-uuid",
+        "agent_id": "childabc",
+        "tool_name": "Read",
+        "tool_input": {"file_path": "/x.py"},
+        "tool_response": "content",
+        "cwd": "/project",
+    })
+    payload = mock_post.call_args[0][0]
+    assert payload["session_id"] == "childabc"
+    assert payload["parent_session_id"] == "parent-uuid"
+
+
+def test_post_tool_agent_tool_serializes_response():
+    m = import_post_tool()
+    mock_post = run_hook(m, {
+        "session_id": "s1",
+        "tool_name": "Agent",
+        "tool_input": {"description": "do X"},
+        "tool_response": {"result": "done"},
+        "cwd": "/project",
+    })
+    payload = mock_post.call_args[0][0]
+    assert payload["tool_name"] == "Agent"
+    assert '"result"' in payload["output"]
+
+
+def test_post_tool_invalid_json_no_crash():
+    m = import_post_tool()
+    with mock.patch("hooks._common.post_event") as mock_post:
+        with mock.patch("sys.stdin") as mock_stdin:
+            mock_stdin.read.return_value = "not json"
+            m.main()
+    mock_post.assert_not_called()
