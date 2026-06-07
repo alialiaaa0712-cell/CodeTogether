@@ -48,6 +48,18 @@ Claude Code Agent 团队协作平台。
 
 将 `/path/to/CodeTogether` 替换为实际路径（如 `/Users/qinepan/Desktop/search/CodeTogether`）。
 
+## 手机 Web App
+
+启动服务后，在手机浏览器访问：
+
+- `http://<你的电脑 IP>:7878/mobile/index.html`
+- 本机调试：`http://127.0.0.1:7878/mobile/index.html`
+
+页面能力：
+- **状态**：查看 Agent 状态与最近工具事件
+- **聊天**：给指定 Session 发送消息，并查看历史消息
+- **记忆**：审核 pending 记忆并启用 / 拒绝
+
 ## 环境变量
 
 | 变量 | 默认值 | 说明 |
@@ -58,5 +70,5 @@ Claude Code Agent 团队协作平台。
 
 ```bash
 pip install -r requirements.txt
-uvicorn server.main:app --reload
+uvicorn server.main:app --reload --port 7878
 ```

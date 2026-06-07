@@ -30,3 +30,34 @@ def test_search_memory(client):
     results = resp.json()
     assert len(results) >= 1
     assert all(r["status"] == "active" for r in results)
+
+
+def test_list_memories_filters_by_status(client):
+    """
+    验证记忆列表接口会按状态筛选返回结果，支撑 mobile 待审核与已启用列表。
+
+    参数:
+        client: FastAPI 测试客户端，用于创建并更新记忆条目。
+
+    返回值:
+        无返回值；断言 pending 与 active 查询结果只包含对应状态条目。
+    """
+    pending_resp = client.post("/memory", json={
+        "title": "待审核记忆",
+        "content": "这条记忆应留在 pending 列表",
+    })
+    active_resp = client.post("/memory", json={
+        "title": "已启用记忆",
+        "content": "这条记忆应出现在 active 列表",
+    })
+    client.patch(f"/memory/{active_resp.json()['id']}", json={"status": "active"})
+
+    pending_list = client.get("/memory?status=pending")
+    active_list = client.get("/memory?status=active")
+
+    assert pending_list.status_code == 200
+    assert active_list.status_code == 200
+    assert any(item["id"] == pending_resp.json()["id"] for item in pending_list.json())
+    assert all(item["status"] == "pending" for item in pending_list.json())
+    assert any(item["id"] == active_resp.json()["id"] for item in active_list.json())
+    assert all(item["status"] == "active" for item in active_list.json())

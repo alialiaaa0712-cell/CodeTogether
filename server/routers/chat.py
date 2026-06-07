@@ -40,6 +40,16 @@ def poll_messages(session_id: str, db: DBSession = Depends(get_db)):
 
 @router.get("/{session_id}/history", response_model=List[MessageOut])
 def message_history(session_id: str, db: DBSession = Depends(get_db)):
+    """
+    返回指定会话最近的聊天历史，供移动端渲染消息列表。
+
+    参数:
+        session_id: 目标会话 ID。
+        db: 数据库会话。
+
+    返回值:
+        按创建时间倒序排列的最近 100 条消息。
+    """
     return (
         db.query(MessageModel)
         .filter(MessageModel.session_id == session_id)

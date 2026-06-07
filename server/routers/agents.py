@@ -6,7 +6,7 @@ from typing import List, Literal, Optional
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session as DBSession
 
@@ -15,6 +15,27 @@ from server.models import Session as SessionModel
 from server.schemas import SessionCreate, SessionOut
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+
+
+async def _broadcast_session_update(request: Request, session: SessionModel) -> None:
+    """
+    通过统一的 agent_update 消息广播最新会话快照，确保前后端字段结构一致。
+
+    参数:
+        request: 当前请求对象，用于读取应用上的 WebSocket 管理器。
+        session: 已完成提交并刷新的会话 ORM 对象。
+
+    返回值:
+        无。
+    """
+    try:
+        manager = request.app.state.ws_manager
+        await manager.broadcast({
+            "type": "agent_update",
+            "data": SessionOut.model_validate(session).model_dump(),
+        })
+    except Exception as exc:
+        logger.warning("Session WebSocket 广播失败: %s", exc)
 
 
 class StatusUpdate(BaseModel):
@@ -26,7 +47,18 @@ class ParentUpdate(BaseModel):
 
 
 @router.post("", response_model=SessionOut)
-def create_session(body: SessionCreate, db: DBSession = Depends(get_db)):
+async def create_session(body: SessionCreate, request: Request, db: DBSession = Depends(get_db)):
+    """
+    创建 Agent 会话，并在成功写库后向移动端广播最新会话数据。
+
+    参数:
+        body: 创建会话所需的字段。
+        request: 当前请求对象，用于访问应用级 WebSocket 管理器。
+        db: 数据库会话。
+
+    返回值:
+        创建后的会话对象；若会话已存在则返回现有记录。
+    """
     existing = db.get(SessionModel, body.id)
     if existing:
         return existing
@@ -34,6 +66,7 @@ def create_session(body: SessionCreate, db: DBSession = Depends(get_db)):
     db.add(session)
     db.commit()
     db.refresh(session)
+    await _broadcast_session_update(request, session)
     return session
 
 
@@ -43,8 +76,19 @@ def list_sessions(db: DBSession = Depends(get_db)):
 
 
 @router.patch("/{session_id}/status", response_model=SessionOut)
-def update_status(session_id: str, body: StatusUpdate, db: DBSession = Depends(get_db)):
-    """Stop hook 调用，将会话标记为 stopped；stopped 时异步触发知识提炼。"""
+async def update_status(session_id: str, body: StatusUpdate, request: Request, db: DBSession = Depends(get_db)):
+    """
+    更新会话状态，并在状态变更后广播最新会话数据。
+
+    参数:
+        session_id: 目标会话 ID。
+        body: 状态更新请求体。
+        request: 当前请求对象，用于访问应用级 WebSocket 管理器。
+        db: 数据库会话。
+
+    返回值:
+        更新后的会话对象。
+    """
     session = db.get(SessionModel, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")
@@ -53,6 +97,7 @@ def update_status(session_id: str, body: StatusUpdate, db: DBSession = Depends(g
         session.ended_at = time.time()
     db.commit()
     db.refresh(session)
+    await _broadcast_session_update(request, session)
 
     if body.status == "stopped":
         _trigger_extraction(session_id, session.project_id)
@@ -61,13 +106,26 @@ def update_status(session_id: str, body: StatusUpdate, db: DBSession = Depends(g
 
 
 @router.patch("/{session_id}/parent", response_model=SessionOut)
-def update_parent(session_id: str, body: ParentUpdate, db: DBSession = Depends(get_db)):
+async def update_parent(session_id: str, body: ParentUpdate, request: Request, db: DBSession = Depends(get_db)):
+    """
+    更新会话父子关系，并向前端广播最新会话数据。
+
+    参数:
+        session_id: 目标会话 ID。
+        body: 父会话更新请求体。
+        request: 当前请求对象，用于访问应用级 WebSocket 管理器。
+        db: 数据库会话。
+
+    返回值:
+        更新后的会话对象。
+    """
     session = db.get(SessionModel, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")
     session.parent_id = body.parent_id
     db.commit()
     db.refresh(session)
+    await _broadcast_session_update(request, session)
     return session
 
 
@@ -80,26 +138,50 @@ class NotesUpdate(BaseModel):
 
 
 @router.patch("/{session_id}/model", response_model=SessionOut)
-def update_model(session_id: str, body: ModelUpdate, db: DBSession = Depends(get_db)):
-    """SessionStart hook 上报模型名称。"""
+async def update_model(session_id: str, body: ModelUpdate, request: Request, db: DBSession = Depends(get_db)):
+    """
+    更新会话模型名称，并向前端广播最新会话数据。
+
+    参数:
+        session_id: 目标会话 ID。
+        body: 模型更新请求体。
+        request: 当前请求对象，用于访问应用级 WebSocket 管理器。
+        db: 数据库会话。
+
+    返回值:
+        更新后的会话对象。
+    """
     session = db.get(SessionModel, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")
     session.model = body.model
     db.commit()
     db.refresh(session)
+    await _broadcast_session_update(request, session)
     return session
 
 
 @router.patch("/{session_id}/notes", response_model=SessionOut)
-def update_notes(session_id: str, body: NotesUpdate, db: DBSession = Depends(get_db)):
-    """用户在 Dashboard 添加备注。"""
+async def update_notes(session_id: str, body: NotesUpdate, request: Request, db: DBSession = Depends(get_db)):
+    """
+    更新会话备注，并向前端广播最新会话数据。
+
+    参数:
+        session_id: 目标会话 ID。
+        body: 备注更新请求体。
+        request: 当前请求对象，用于访问应用级 WebSocket 管理器。
+        db: 数据库会话。
+
+    返回值:
+        更新后的会话对象。
+    """
     session = db.get(SessionModel, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")
     session.notes = body.notes
     db.commit()
     db.refresh(session)
+    await _broadcast_session_update(request, session)
     return session
 
 

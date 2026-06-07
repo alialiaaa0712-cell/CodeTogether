@@ -130,6 +130,18 @@ function switchTab(tab) {
   Object.entries(dom.views).forEach(([name, node]) => {
     node.classList.toggle("active", name === tab);
   });
+  if (tab === "chat") {
+    loadChatHistory().catch((error) => {
+      console.error("加载聊天历史失败", error);
+      showToast("聊天历史加载失败，请稍后重试");
+    });
+  }
+  if (tab === "memory") {
+    loadMemories().catch((error) => {
+      console.error("加载记忆列表失败", error);
+      showToast("记忆列表加载失败，请稍后重试");
+    });
+  }
 }
 
 /**
@@ -203,7 +215,7 @@ function renderStatus() {
 }
 
 /**
- * 渲染聊天历史占位内容，明确聊天能力将在后续任务中接入。
+ * 根据当前选中会话与聊天消息状态渲染聊天历史列表。
  *
  * 参数:
  *   无。
@@ -212,11 +224,29 @@ function renderStatus() {
  *   无返回值。
  */
 function renderChatHistory() {
-  dom.chatHistory.innerHTML = '<div class="empty">请在后续任务中实现聊天渲染</div>';
+  if (!state.selectedSessionId) {
+    dom.chatHistory.innerHTML = '<div class="empty">暂无可聊天的 Session</div>';
+    return;
+  }
+  if (state.chatMessages.length === 0) {
+    dom.chatHistory.innerHTML = '<div class="empty">暂无聊天消息</div>';
+    return;
+  }
+  dom.chatHistory.innerHTML = state.chatMessages
+    .map((message) => `
+      <div class="message-item">
+        <div class="event-row">
+          <strong>${escapeHtml(message.status)}</strong>
+          <span>${escapeHtml(formatTime(message.created_at))}</span>
+        </div>
+        <div>${escapeHtml(message.content)}</div>
+      </div>
+    `)
+    .join("");
 }
 
 /**
- * 渲染记忆页占位内容，确保当前任务不提前引入记忆接口行为。
+ * 根据当前筛选状态渲染记忆列表，并为待审核条目绑定审核动作。
  *
  * 参数:
  *   无。
@@ -225,7 +255,43 @@ function renderChatHistory() {
  *   无返回值。
  */
 function renderMemories() {
-  dom.memoryList.innerHTML = '<div class="empty">请在后续任务中实现记忆渲染</div>';
+  if (state.memories.length === 0) {
+    dom.memoryList.innerHTML = '<div class="empty">暂无记忆条目</div>';
+    return;
+  }
+  dom.memoryList.innerHTML = state.memories
+    .map((memory) => {
+      const actions = state.memoryFilter === "pending"
+        ? `
+          <div class="memory-actions">
+            <button type="button" data-action="activate" data-id="${escapeHtml(memory.id)}">启用</button>
+            <button type="button" class="danger" data-action="reject" data-id="${escapeHtml(memory.id)}">拒绝</button>
+          </div>
+        `
+        : "";
+      return `
+        <div class="memory-item">
+          <div class="memory-row">
+            <strong>${escapeHtml(memory.title)}</strong>
+            <span>${escapeHtml(memory.status)}</span>
+          </div>
+          <div class="hint">tags: ${escapeHtml(memory.tags || "—")}</div>
+          <div>${escapeHtml(memory.content)}</div>
+          ${actions}
+        </div>
+      `;
+    })
+    .join("");
+
+  dom.memoryList.querySelectorAll("button[data-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const status = button.dataset.action === "activate" ? "active" : "rejected";
+      reviewMemory(button.dataset.id, status).catch((error) => {
+        console.error("审核记忆失败", error);
+        showToast("记忆审核失败，请稍后重试");
+      });
+    });
+  });
 }
 
 /**
@@ -249,6 +315,91 @@ async function loadStatusData() {
 }
 
 /**
+ * 拉取当前选中会话的聊天历史；若尚未选择会话则渲染空状态。
+ *
+ * 参数:
+ *   无。
+ *
+ * 返回值:
+ *   一个在聊天历史加载并完成渲染后兑现的 Promise。
+ */
+async function loadChatHistory() {
+  if (!state.selectedSessionId) {
+    state.chatMessages = [];
+    renderChatHistory();
+    return;
+  }
+  state.chatMessages = await fetchJson(`${SERVER}/chat/${state.selectedSessionId}/history`);
+  renderChatHistory();
+}
+
+/**
+ * 向当前选中会话发送一条聊天消息，并在成功后刷新历史记录。
+ *
+ * 参数:
+ *   无。
+ *
+ * 返回值:
+ *   一个在消息发送完成后兑现的 Promise。
+ */
+async function sendChatMessage() {
+  if (!state.selectedSessionId) {
+    showToast("请先选择 Session");
+    return;
+  }
+  const content = dom.chatInput.value.trim();
+  if (!content) {
+    showToast("消息不能为空");
+    return;
+  }
+  await fetchJson(`${SERVER}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: state.selectedSessionId,
+      content,
+    }),
+  });
+  dom.chatInput.value = "";
+  showToast("消息已发送，等待 Agent 下一次工具调用时接收");
+  await loadChatHistory();
+}
+
+/**
+ * 按当前筛选状态拉取记忆列表，并在成功后刷新页面展示。
+ *
+ * 参数:
+ *   无。
+ *
+ * 返回值:
+ *   一个在记忆列表加载并渲染完成后兑现的 Promise。
+ */
+async function loadMemories() {
+  state.memories = await fetchJson(`${SERVER}/memory?status=${state.memoryFilter}`);
+  renderMemories();
+}
+
+/**
+ * 审核指定记忆条目，并在状态更新后重新加载当前筛选列表。
+ *
+ * 参数:
+ *   memoryId: 目标记忆 ID。
+ *   status: 审核后的目标状态，只允许 active 或 rejected。
+ *
+ * 返回值:
+ *   一个在审核完成并刷新列表后兑现的 Promise。
+ */
+async function reviewMemory(memoryId, status) {
+  await fetchJson(`${SERVER}/memory/${memoryId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  showToast(status === "active" ? "记忆已启用" : "记忆已拒绝");
+  await loadMemories();
+}
+
+/**
  * 将单个会话更新合并到本地状态中，并立即刷新状态页与聊天页会话下拉框。
  *
  * 参数:
@@ -266,6 +417,7 @@ function upsertSession(session) {
   }
   renderSessionOptions();
   renderStatus();
+  renderChatHistory();
 }
 
 /**
@@ -291,6 +443,11 @@ function connectWebSocket() {
       state.events.unshift(payload.data);
       state.events = state.events.slice(0, 100);
       renderStatus();
+      if (payload.data.session_id === state.selectedSessionId) {
+        loadChatHistory().catch((error) => {
+          console.error("收到事件后刷新聊天历史失败", error);
+        });
+      }
     }
     if (payload.type === "agent_update") {
       upsertSession(payload.data);
@@ -318,9 +475,9 @@ function connectWebSocket() {
 async function init() {
   setConnectionStatus(false);
   await loadStatusData();
+  await loadChatHistory();
+  await loadMemories();
   connectWebSocket();
-  renderChatHistory();
-  renderMemories();
 }
 
 dom.tabButtons.forEach((btn) => {
@@ -329,26 +486,38 @@ dom.tabButtons.forEach((btn) => {
 
 dom.chatSessionSelect.addEventListener("change", (event) => {
   state.selectedSessionId = event.target.value;
-  renderChatHistory();
+  loadChatHistory().catch((error) => {
+    console.error("切换 Session 后加载聊天历史失败", error);
+    showToast("聊天历史加载失败，请稍后重试");
+  });
 });
 
 dom.chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  showToast("聊天能力将在后续任务中接入");
+  sendChatMessage().catch((error) => {
+    console.error("发送聊天消息失败", error);
+    showToast("消息发送失败，请稍后重试");
+  });
 });
 
 dom.memoryFilterPending.addEventListener("click", () => {
   state.memoryFilter = "pending";
   dom.memoryFilterPending.classList.add("active");
   dom.memoryFilterActive.classList.remove("active");
-  renderMemories();
+  loadMemories().catch((error) => {
+    console.error("切换待审核记忆失败", error);
+    showToast("记忆列表加载失败，请稍后重试");
+  });
 });
 
 dom.memoryFilterActive.addEventListener("click", () => {
   state.memoryFilter = "active";
   dom.memoryFilterActive.classList.add("active");
   dom.memoryFilterPending.classList.remove("active");
-  renderMemories();
+  loadMemories().catch((error) => {
+    console.error("切换已启用记忆失败", error);
+    showToast("记忆列表加载失败，请稍后重试");
+  });
 });
 
 init().catch((error) => {

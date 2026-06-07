@@ -1,3 +1,9 @@
+from pathlib import Path
+import queue
+import threading
+import uuid
+
+
 def test_root_still_returns_healthcheck(client):
     """
     验证根路径仍返回健康检查结果。
@@ -134,27 +140,192 @@ def test_mobile_css_contains_mobile_layout_rules(client):
     assert "padding-bottom: calc(72px + env(safe-area-inset-bottom));" in css
 
 
-def test_mobile_status_script_contains_task3_contract(client):
+def _receive_ws_message(websocket, timeout=1.0):
     """
-    验证移动端脚本符合 Task 3 的状态页契约，而不会提前接入 Task 4/5 的真实能力。
+    在后台线程中等待一条 WebSocket JSON 消息，并以超时失败避免测试永久阻塞。
+
+    参数:
+        websocket: 已建立连接的 WebSocket 测试对象。
+        timeout: 最长等待秒数，超时后直接让测试失败。
+
+    返回值:
+        接收到的 JSON 对象。
+    """
+    result = queue.Queue(maxsize=1)
+
+    def _reader():
+        try:
+            result.put(("message", websocket.receive_json()))
+        except Exception as exc:
+            result.put(("error", exc))
+
+    thread = threading.Thread(target=_reader, daemon=True)
+    thread.start()
+    kind, payload = result.get(timeout=timeout)
+    if kind == "error":
+        raise payload
+    return payload
+
+
+def test_mobile_websocket_receives_agent_update_on_create_and_status_change(client):
+    """
+    验证移动端 WebSocket 在会话创建与状态更新后都能收到 agent_update 消息。
+
+    参数:
+        client: FastAPI 测试客户端，用于建立 WebSocket 连接并发起 HTTP 请求。
+
+    返回值:
+        无返回值；断言两次状态变更都会推送统一结构的 agent_update。
+    """
+    session_id = f"session-{uuid.uuid4()}"
+
+    with client.websocket_connect("/ws") as websocket:
+        create_resp = client.post(
+            "/agents",
+            json={"id": session_id, "cwd": "/tmp/mobile", "model": "sonnet"},
+        )
+        assert create_resp.status_code == 200
+
+        create_message = _receive_ws_message(websocket)
+        assert create_message["type"] == "agent_update"
+        assert create_message["data"]["id"] == session_id
+        assert create_message["data"]["cwd"] == "/tmp/mobile"
+        assert create_message["data"]["model"] == "sonnet"
+        assert create_message["data"]["status"] == "active"
+
+        status_resp = client.patch(f"/agents/{session_id}/status", json={"status": "stopped"})
+        assert status_resp.status_code == 200
+
+        status_message = _receive_ws_message(websocket)
+        assert status_message["type"] == "agent_update"
+        assert status_message["data"]["id"] == session_id
+        assert status_message["data"]["status"] == "stopped"
+        assert status_message["data"]["ended_at"] is not None
+
+
+def test_mobile_websocket_receives_agent_update_before_event_for_new_event_session(client):
+    """
+    验证新会话若由 /events 首次带出，移动端会先收到 agent_update，再收到 event。
+
+    参数:
+        client: FastAPI 测试客户端，用于建立 WebSocket 连接并发起事件上报请求。
+
+    返回值:
+        无返回值；断言新会话的会话快照与事件时间线都会被实时推送。
+    """
+    session_id = f"session-{uuid.uuid4()}"
+
+    with client.websocket_connect("/ws") as websocket:
+        resp = client.post(
+            "/events",
+            json={
+                "session_id": session_id,
+                "type": "tool_call",
+                "tool_name": "Read",
+                "input": {"file_path": "/tmp/demo.txt"},
+            },
+        )
+        assert resp.status_code == 200
+
+        session_message = _receive_ws_message(websocket)
+        assert session_message["type"] == "agent_update"
+        assert session_message["data"]["id"] == session_id
+        assert session_message["data"]["status"] == "active"
+
+        event_message = _receive_ws_message(websocket)
+        assert event_message["type"] == "event"
+        assert event_message["data"]["session_id"] == session_id
+        assert event_message["data"]["type"] == "tool_call"
+        assert event_message["data"]["tool_name"] == "Read"
+
+
+def test_mobile_websocket_still_broadcasts_event_messages_for_existing_session(client):
+    """
+    验证已存在会话上报事件时，/events 仍只推送既有 event 广播而不会破坏消息契约。
+
+    参数:
+        client: FastAPI 测试客户端，用于建立 WebSocket 连接并预先创建会话。
+
+    返回值:
+        无返回值；断言既有会话的事件广播类型仍为 event。
+    """
+    session_id = f"session-{uuid.uuid4()}"
+    create_resp = client.post(
+        "/agents",
+        json={"id": session_id, "cwd": "/tmp/mobile", "model": "sonnet"},
+    )
+    assert create_resp.status_code == 200
+
+    with client.websocket_connect("/ws") as websocket:
+        resp = client.post(
+            "/events",
+            json={
+                "session_id": session_id,
+                "type": "tool_call",
+                "tool_name": "Read",
+                "input": {"file_path": "/tmp/demo.txt"},
+            },
+        )
+        assert resp.status_code == 200
+
+        message = _receive_ws_message(websocket)
+        assert message["type"] == "event"
+        assert message["data"]["session_id"] == session_id
+        assert message["data"]["type"] == "tool_call"
+        assert message["data"]["tool_name"] == "Read"
+
+
+def test_mobile_chat_script_contains_chat_endpoints(client):
+    """
+    验证移动端脚本已接入聊天历史与发送消息能力。
 
     参数:
         client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
 
     返回值:
-        无返回值；断言脚本文本中包含状态接口、初始化顺序与聊天/记忆占位实现。
+        无返回值；断言脚本中包含聊天相关函数与接口调用。
     """
     js = client.get("/mobile/app.js").text
-    assert 'new WebSocket(WS_URL)' in js
-    assert 'fetchJson(`${SERVER}/agents`)' in js
-    assert 'fetchJson(`${SERVER}/events`)' in js
-    assert 'setConnectionStatus(false);' in js
-    assert 'await loadStatusData();' in js
-    assert 'connectWebSocket();' in js
-    assert js.index('setConnectionStatus(false);') < js.index('await loadStatusData();') < js.index('connectWebSocket();')
-    assert '聊天能力将在后续任务中接入' in js
-    assert '请在后续任务中实现聊天渲染' in js
-    assert '请在后续任务中实现记忆渲染' in js
-    assert '/chat/send' not in js
-    assert '/memory/approve' not in js
-    assert '/memory/reject' not in js
+    assert "function loadChatHistory()" in js
+    assert "function sendChatMessage()" in js
+    assert 'fetchJson(`${SERVER}/chat/${state.selectedSessionId}/history`)' in js
+    assert 'fetchJson(`${SERVER}/chat`, {' in js
+    assert 'method: "POST"' in js
+    assert '消息已发送，等待 Agent 下一次工具调用时接收' in js
+    assert 'if (payload.data.session_id === state.selectedSessionId)' in js
+
+
+def test_mobile_memory_script_contains_review_actions(client):
+    """
+    验证移动端脚本已接入记忆拉取与审核动作。
+
+    参数:
+        client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
+
+    返回值:
+        无返回值；断言脚本中包含记忆筛选、审核与 PATCH 调用。
+    """
+    js = client.get("/mobile/app.js").text
+    assert "function loadMemories()" in js
+    assert "function reviewMemory(memoryId, status)" in js
+    assert 'fetchJson(`${SERVER}/memory?status=${state.memoryFilter}`)' in js
+    assert 'fetchJson(`${SERVER}/memory/${memoryId}`, {' in js
+    assert 'method: "PATCH"' in js
+    assert '记忆已启用' in js
+    assert '记忆已拒绝' in js
+
+
+def test_readme_mentions_mobile_entry():
+    """
+    验证 README 已包含手机 Web App 入口与使用说明。
+
+    参数:
+        无。
+
+    返回值:
+        无返回值；断言 README 中包含 mobile 入口地址与页面能力说明。
+    """
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    assert "手机 Web App" in readme
+    assert "/mobile/index.html" in readme
+    assert "7878" in readme
