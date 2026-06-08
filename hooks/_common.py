@@ -63,25 +63,31 @@ def poll_messages(session_id: str) -> list:
 
 def search_memory(query: str, project_id: str = None) -> list:
     """
-    搜索相关记忆条目，失败时返回空列表。
+    搜索记忆：先查 long+active，不足 3 条时再补 short+active，合计最多 3 条。
 
     参数:
-        query: 搜索词（当前工具名）
-        project_id: 限定项目范围（可选）
+        query: 搜索关键词。
+        project_id: 可选项目 ID 过滤。
 
     返回值:
-        list: MemoryOut 字典列表（最多 3 条）
+        最多 3 条匹配的记忆列表，长期记忆优先。
     """
-    try:
-        params = {"q": query}
-        if project_id:
-            params["project_id"] = project_id
-        url = f"{SERVER}/memory/search?" + urllib.parse.urlencode(params)
-        req = urllib.request.Request(url, method="GET")
-        resp = urllib.request.urlopen(req, timeout=TIMEOUT)
-        return json.loads(resp.read())
-    except Exception:
-        return []
+    def _fetch(tier: str) -> list:
+        try:
+            params = {"q": query, "tier": tier}
+            if project_id:
+                params["project_id"] = project_id
+            url = f"{SERVER}/memory/search?" + urllib.parse.urlencode(params)
+            req = urllib.request.Request(url, method="GET")
+            resp = urllib.request.urlopen(req, timeout=TIMEOUT)
+            return json.loads(resp.read())
+        except Exception:
+            return []
+
+    results = _fetch("long")
+    if len(results) < 3:
+        results += _fetch("short")[: 3 - len(results)]
+    return results
 
 
 def ensure_session(session_id: str, cwd: str = None) -> None:
@@ -146,6 +152,28 @@ def mark_stopped(session_id: str) -> None:
         req = urllib.request.Request(
             f"{SERVER}/agents/{session_id}/status",
             data=json.dumps({"status": "stopped"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="PATCH",
+        )
+        urllib.request.urlopen(req, timeout=TIMEOUT)
+    except Exception:
+        pass
+
+
+def flag_memory_for_review(memory_id: str) -> None:
+    """
+    将指定记忆标记为 review 状态，供 Agent 发现长期记忆与项目实际情况不符时调用。
+
+    参数:
+        memory_id: 需要标记的记忆 ID。
+
+    返回值:
+        无。
+    """
+    try:
+        req = urllib.request.Request(
+            f"{SERVER}/memory/{memory_id}",
+            data=json.dumps({"status": "review"}).encode(),
             headers={"Content-Type": "application/json"},
             method="PATCH",
         )

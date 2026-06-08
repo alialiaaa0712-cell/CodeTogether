@@ -79,16 +79,23 @@ def test_poll_messages_empty_on_error():
 # --- search_memory ---
 
 def test_search_memory_returns_list(monkeypatch):
+    """验证 search_memory 在两段查询中正确合并结果。"""
     m = import_common()
-    payload = [{"title": "T", "content": "C", "tags": "t"}]
-    response = mock.MagicMock()
-    response.read.return_value = json.dumps(payload).encode()
-    with mock.patch("urllib.request.urlopen", return_value=response) as mock_open:
+    long_payload = [{"id": "1", "title": "T", "content": "C", "tags": "t", "tier": "long"}]
+    short_payload = []
+    def fake_urlopen(req, timeout):
+        resp = mock.MagicMock()
+        if "tier=long" in req.full_url:
+            resp.read.return_value = json.dumps(long_payload).encode()
+        else:
+            resp.read.return_value = json.dumps(short_payload).encode()
+        return resp
+    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen) as mock_open:
         result = m.search_memory("pytest", project_id="proj-1")
-    assert result == payload
-    req = mock_open.call_args[0][0]
-    assert "memory/search" in req.full_url
-    assert "pytest" in req.full_url
+    assert result == long_payload
+    first_req = mock_open.call_args_list[0][0][0]
+    assert "memory/search" in first_req.full_url
+    assert "pytest" in first_req.full_url
 
 
 def test_search_memory_empty_on_error():
@@ -379,3 +386,44 @@ def test_pre_tool_invalid_json_no_crash():
         mock_stdin.read.return_value = "not json"
         m.main()
     mock_post.assert_not_called()
+
+
+def test_search_memory_two_stage():
+    """验证 search_memory 先查 long，不足 3 条时再补 short，共两次请求。"""
+    m = import_common()
+    long_result = [{"id": "1", "tier": "long", "title": "L", "content": "c"}]
+    short_result = [{"id": "2", "tier": "short", "title": "S", "content": "c"}]
+
+    call_count = {"n": 0}
+    def fake_urlopen(req, timeout):
+        call_count["n"] += 1
+        resp = mock.MagicMock()
+        if "tier=long" in req.full_url:
+            resp.read.return_value = json.dumps(long_result).encode()
+        else:
+            resp.read.return_value = json.dumps(short_result).encode()
+        return resp
+
+    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        results = m.search_memory("test")
+    assert call_count["n"] == 2
+    assert results[0]["tier"] == "long"
+    assert results[1]["tier"] == "short"
+
+
+def test_flag_memory_for_review():
+    """验证 flag_memory_for_review 发出 PATCH /memory/{id} 并设置 status=review。"""
+    m = import_common()
+    captured = {}
+    def fake_urlopen(req, timeout):
+        captured["method"] = req.method
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data)
+        return mock.MagicMock()
+
+    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        m.flag_memory_for_review("mem-123")
+
+    assert captured["method"] == "PATCH"
+    assert "mem-123" in captured["url"]
+    assert captured["body"]["status"] == "review"
