@@ -64,6 +64,7 @@ def test_list_memories_filters_by_status(client):
 
 
 def test_memory_has_tier_and_updated_at(client):
+    """验证记忆创建时默认 tier 为 short，且 updated_at 已被正确设置。"""
     resp = client.post("/memory", json={"title": "t", "content": "c"})
     data = resp.json()
     assert data["tier"] == "short"
