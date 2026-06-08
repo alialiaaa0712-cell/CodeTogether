@@ -103,12 +103,15 @@ class MemoryOut(BaseModel):
     content: str
     tags: Optional[str] = None
     status: str
+    tier: str
     source_session_id: Optional[str] = None
     created_at: float
     activated_at: Optional[float] = None
+    updated_at: float
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class MemoryUpdate(BaseModel):
-    status: Literal["active", "rejected"]
+    status: Optional[Literal["active", "rejected", "review"]] = None
+    tier: Optional[Literal["short", "long"]] = None

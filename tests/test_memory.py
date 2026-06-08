@@ -61,3 +61,10 @@ def test_list_memories_filters_by_status(client):
     assert all(item["status"] == "pending" for item in pending_list.json())
     assert any(item["id"] == active_resp.json()["id"] for item in active_list.json())
     assert all(item["status"] == "active" for item in active_list.json())
+
+
+def test_memory_has_tier_and_updated_at(client):
+    resp = client.post("/memory", json={"title": "t", "content": "c"})
+    data = resp.json()
+    assert data["tier"] == "short"
+    assert data["updated_at"] > 0
