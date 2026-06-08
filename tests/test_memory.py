@@ -69,3 +69,58 @@ def test_memory_has_tier_and_updated_at(client):
     data = resp.json()
     assert data["tier"] == "short"
     assert data["updated_at"] > 0
+
+
+def test_search_prefers_long(client):
+    """长期记忆应排在短期记忆前面返回。"""
+    short_resp = client.post("/memory", json={"title": "short knowledge", "content": "pytest short"})
+    long_resp = client.post("/memory", json={"title": "long knowledge", "content": "pytest long"})
+    client.patch(f"/memory/{short_resp.json()['id']}", json={"status": "active"})
+    client.patch(f"/memory/{long_resp.json()['id']}", json={"status": "active"})
+    client.patch(f"/memory/{long_resp.json()['id']}", json={"tier": "long"})
+
+    resp = client.get("/memory/search?q=pytest")
+    results = resp.json()
+    assert len(results) >= 1
+    long_ids = [r["id"] for r in results if r["tier"] == "long"]
+    short_ids = [r["id"] for r in results if r["tier"] == "short"]
+    if long_ids and short_ids:
+        long_pos = next(i for i, r in enumerate(results) if r["tier"] == "long")
+        short_pos = next(i for i, r in enumerate(results) if r["tier"] == "short")
+        assert long_pos < short_pos
+
+
+def test_patch_to_review(client):
+    """验证可以将 active/long 记忆标记为 review 状态。"""
+    resp = client.post("/memory", json={"title": "t", "content": "c"})
+    mid = resp.json()["id"]
+    client.patch(f"/memory/{mid}", json={"status": "active"})
+    client.patch(f"/memory/{mid}", json={"tier": "long"})
+    r = client.patch(f"/memory/{mid}", json={"status": "review"})
+    assert r.status_code == 200
+    assert r.json()["status"] == "review"
+
+
+def test_patch_downgrade(client):
+    """验证将 review/long 记忆降级为 short/active 的操作。"""
+    resp = client.post("/memory", json={"title": "t", "content": "c"})
+    mid = resp.json()["id"]
+    client.patch(f"/memory/{mid}", json={"status": "active"})
+    client.patch(f"/memory/{mid}", json={"tier": "long"})
+    client.patch(f"/memory/{mid}", json={"status": "review"})
+    r = client.patch(f"/memory/{mid}", json={"tier": "short"})
+    assert r.status_code == 200
+    assert r.json()["tier"] == "short"
+    assert r.json()["status"] == "active"
+
+
+def test_list_filter_by_tier(client):
+    """验证 GET /memory?tier=... 能按 tier 筛选返回记忆。"""
+    short_resp = client.post("/memory", json={"title": "s", "content": "c"})
+    long_resp = client.post("/memory", json={"title": "l", "content": "c"})
+    client.patch(f"/memory/{long_resp.json()['id']}", json={"tier": "long"})
+
+    short_list = client.get("/memory?tier=short")
+    long_list = client.get("/memory?tier=long")
+    assert all(r["tier"] == "short" for r in short_list.json())
+    assert all(r["tier"] == "long" for r in long_list.json())
