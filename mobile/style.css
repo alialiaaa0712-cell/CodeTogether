@@ -68,6 +68,17 @@ body {
   display: block;
 }
 
+#view-chat {
+  display: none;
+  flex-direction: column;
+  height: calc(100vh - 56px - 56px - env(safe-area-inset-bottom));
+  padding: 0 12px 12px;
+}
+
+#view-chat.active {
+  display: flex !important;
+}
+
 .card {
   background: #fff;
   border-radius: 16px;
@@ -382,21 +393,16 @@ button.danger {
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
 }
 
-/* 聊天视图撑满可视区域 */
-#view-chat {
-  display: none;
-  flex-direction: column;
-  height: calc(100vh - 56px - 56px - env(safe-area-inset-bottom));
-}
-
-#view-chat.active {
-  display: flex;
-}
+/* 聊天视图撑满可视区域 — 在下方单独定义，不在此处重复 */
 
 .chat-history {
   flex: 1;
   overflow-y: auto;
+  min-height: 0;
   padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .chat-form {
@@ -407,6 +413,58 @@ button.danger {
   border-top: 1px solid #e5e7eb;
 }
 
+/* 工具调用行 */
+.tool-call {
+  margin: 2px 0;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 12px;
+  color: #6b7280;
+  border-left: 3px solid #e5e7eb;
+}
+
+.tool-call-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.tool-name {
+  font-family: "SF Mono", "Menlo", monospace;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-status.pre_tool { color: #f59e0b; }
+.tool-status.post_tool { color: #10b981; }
+
+.tool-time {
+  font-size: 11px;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.tool-detail {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-family: "SF Mono", "Menlo", monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #f1f5f9;
+  border-top: 1px solid #e5e7eb;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tool-output {
+  background: #f0fdf4;
+  color: #166534;
+}
+
 .memory-item {
   padding: 12px 0;
   border-bottom: 1px solid #f0f0f0;
@@ -414,5 +472,47 @@ button.danger {
 
 .memory-item:last-child {
   border-bottom: none;
+}
+
+.tier-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.tier-badge.long {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+.tier-badge.short {
+  background: rgba(156, 163, 175, 0.2);
+  color: #6b7280;
+}
+
+.memory-review {
+  border-left: 3px solid #f59e0b;
+}
+
+.tier-filter {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.tier-filter button {
+  flex: 1;
+  padding: 6px;
+  border-radius: 8px;
+  font-size: 12px;
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.tier-filter button.active {
+  background: #2563eb;
+  color: #fff;
 }
 

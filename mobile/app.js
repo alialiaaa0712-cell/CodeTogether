@@ -11,6 +11,7 @@ const state = {
   chatMessages: [],
   memories: [],
   memoryFilter: "pending",
+  tierFilter: "all",
   inChat: false,
 };
 
@@ -214,15 +215,32 @@ function renderChatHistory() {
     dom.chatHistory.innerHTML = '<div class="empty">暂无聊天消息</div>';
     return;
   }
-  dom.chatHistory.innerHTML = [...state.chatMessages].reverse()
-    .map((msg) => `
-      <div class="bubble-row ${escapeHtml(msg.role)}">
-        <div class="bubble ${escapeHtml(msg.role)}">
-          <div class="bubble-content">${escapeHtml(msg.content)}</div>
-          <div class="bubble-meta">${escapeHtml(formatTime(msg.created_at))}${msg.role === "user" && msg.status === "pending" ? " · 发送中" : ""}</div>
-        </div>
-      </div>
-    `)
+  console.log(`[render] total=${state.chatMessages.length} events=${state.chatMessages.filter(m => m._type==="event").length}`);
+  dom.chatHistory.innerHTML = state.chatMessages
+    .map((item) => {
+      if (item._type === "event") {
+        const inputStr = item.input ? JSON.stringify(item.input, null, 2) : "";
+        const outputStr = item.output || "";
+        const durationStr = item.duration_ms ? ` · ${item.duration_ms}ms` : "";
+        const statusIcon = item.done ? "✓" : "▶";
+        const statusClass = item.done ? "post_tool" : "pre_tool";
+        return `<div class="tool-call">
+            <div class="tool-call-summary">
+              <span class="tool-status ${statusClass}">${statusIcon}</span>
+              <span class="tool-name">${escapeHtml(item.tool_name || "")}</span>
+              <span class="tool-time">${escapeHtml(formatTime(item.created_at))}${escapeHtml(durationStr)}</span>
+            </div>
+            ${inputStr ? `<pre class="tool-detail">${escapeHtml(inputStr)}</pre>` : ""}
+            ${outputStr ? `<pre class="tool-detail tool-output">${escapeHtml(outputStr.slice(0, 2000))}${outputStr.length > 2000 ? "\n…（已截断）" : ""}</pre>` : ""}
+          </div>`;
+      }
+      return `<div class="bubble-row ${escapeHtml(item.role)}">
+          <div class="bubble ${escapeHtml(item.role)}">
+            <div class="bubble-content">${escapeHtml(item.content)}</div>
+            <div class="bubble-meta">${escapeHtml(formatTime(item.created_at))}${item.role === "user" && item.status === "pending" ? " · 发送中" : ""}</div>
+          </div>
+        </div>`;
+    })
     .join("");
   dom.chatHistory.scrollTop = dom.chatHistory.scrollHeight;
 }
@@ -235,35 +253,58 @@ function renderMemories() {
     dom.memoryList.innerHTML = '<div class="empty">暂无记忆条目</div>';
     return;
   }
-  dom.memoryList.innerHTML = state.memories
-    .map((memory) => {
-      const actions = state.memoryFilter === "pending"
+
+  const tierFilterHtml = state.memoryFilter === "active" ? `
+    <div class="tier-filter">
+      <button type="button" data-tier="all" class="${state.tierFilter === 'all' ? 'active' : ''}">全部</button>
+      <button type="button" data-tier="long" class="${state.tierFilter === 'long' ? 'active' : ''}">长期</button>
+      <button type="button" data-tier="short" class="${state.tierFilter === 'short' ? 'active' : ''}">短期</button>
+    </div>` : "";
+
+  dom.memoryList.innerHTML = tierFilterHtml + state.memories.map((memory) => {
+    const isReview = memory.status === "review";
+    const tierLabel = `<span class="tier-badge ${escapeHtml(memory.tier)}">${memory.tier === "long" ? "长期" : "短期"}</span>`;
+    const actions = state.memoryFilter === "pending"
+      ? `<div class="memory-actions">
+          <button type="button" data-action="activate" data-id="${escapeHtml(memory.id)}">启用</button>
+          <button type="button" class="danger" data-action="reject" data-id="${escapeHtml(memory.id)}">拒绝</button>
+         </div>`
+      : isReview
         ? `<div class="memory-actions">
-            <button type="button" data-action="activate" data-id="${escapeHtml(memory.id)}">启用</button>
-            <button type="button" class="danger" data-action="reject" data-id="${escapeHtml(memory.id)}">拒绝</button>
+            <button type="button" data-action="downgrade" data-id="${escapeHtml(memory.id)}">确认降级</button>
+            <button type="button" class="danger" data-action="reject" data-id="${escapeHtml(memory.id)}">废弃</button>
            </div>`
         : "";
-      return `
-        <div class="memory-item">
-          <div class="memory-row">
-            <strong>${escapeHtml(memory.title)}</strong>
-            <span>${escapeHtml(memory.status)}</span>
-          </div>
-          <div class="hint">tags: ${escapeHtml(memory.tags || "—")}</div>
-          <div>${escapeHtml(memory.content)}</div>
-          ${actions}
+    return `
+      <div class="memory-item${isReview ? ' memory-review' : ''}">
+        <div class="memory-row">
+          <strong>${escapeHtml(memory.title)}</strong>${tierLabel}
+          <span>${escapeHtml(memory.status)}</span>
         </div>
-      `;
-    })
-    .join("");
+        <div class="hint">tags: ${escapeHtml(memory.tags || "—")} · ${escapeHtml(formatTime(memory.updated_at || memory.created_at))}</div>
+        <div>${escapeHtml(memory.content)}</div>
+        ${actions}
+      </div>
+    `;
+  }).join("");
+
+  dom.memoryList.querySelectorAll(".tier-filter button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.tierFilter = btn.dataset.tier;
+      loadMemories().catch(() => {});
+    });
+  });
 
   dom.memoryList.querySelectorAll("button[data-action]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const status = btn.dataset.action === "activate" ? "active" : "rejected";
-      reviewMemory(btn.dataset.id, status).catch((e) => {
-        console.error("审核记忆失败", e);
-        showToast("记忆审核失败");
-      });
+      const action = btn.dataset.action;
+      if (action === "activate") {
+        reviewMemory(btn.dataset.id, "active").catch(() => showToast("操作失败"));
+      } else if (action === "reject") {
+        reviewMemory(btn.dataset.id, "rejected").catch(() => showToast("操作失败"));
+      } else if (action === "downgrade") {
+        downgradeMemory(btn.dataset.id).catch(() => showToast("操作失败"));
+      }
     });
   });
 }
@@ -292,7 +333,39 @@ async function loadChatHistory() {
     renderChatHistory();
     return;
   }
-  state.chatMessages = await fetchJson(`${SERVER}/chat/${state.selectedSessionId}/history`);
+  let messages = [], events = [];
+  try {
+    [messages, events] = await Promise.all([
+      fetchJson(`${SERVER}/chat/${state.selectedSessionId}/history`),
+      fetchJson(`${SERVER}/events?session_id=${state.selectedSessionId}`),
+    ]);
+  } catch (e) {
+    console.error("loadChatHistory fetch error", e);
+    showToast("加载失败: " + e.message);
+    return;
+  }
+
+  // 将 pre/post 配对合并：pre_tool 作为主记录，post_tool 的 output/duration 合并进去
+  const paired = [];
+  const preQueue = {};
+  [...events].sort((a, b) => a.created_at - b.created_at).forEach((e) => {
+    if (e.type === "pre_tool") {
+      (preQueue[e.tool_name] = preQueue[e.tool_name] || []).push({ ...e, done: false });
+    } else if (e.type === "post_tool") {
+      const q = preQueue[e.tool_name];
+      if (q && q.length) {
+        const pre = q.shift();
+        paired.push({ ...pre, done: true, output: e.output, duration_ms: e.duration_ms });
+      }
+    }
+  });
+  Object.values(preQueue).forEach((q) => q.forEach((e) => paired.push(e)));
+
+  console.log(`[chat] messages=${messages.length} events=${events.length} paired=${paired.length}`);
+
+  const eventItems = paired.map((e) => ({ _type: "event", ...e }));
+  const msgItems = messages.map((m) => ({ ...m, _type: "message" }));
+  state.chatMessages = [...msgItems, ...eventItems].sort((a, b) => a.created_at - b.created_at);
   renderChatHistory();
 }
 
@@ -311,7 +384,11 @@ async function sendChatMessage() {
 }
 
 async function loadMemories() {
-  state.memories = await fetchJson(`${SERVER}/memory?status=${state.memoryFilter}`);
+  let url = `${SERVER}/memory?status=${state.memoryFilter}`;
+  if (state.memoryFilter === "active" && state.tierFilter !== "all") {
+    url += `&tier=${state.tierFilter}`;
+  }
+  state.memories = await fetchJson(url);
   renderMemories();
 }
 
@@ -322,6 +399,16 @@ async function reviewMemory(memoryId, status) {
     body: JSON.stringify({ status }),
   });
   showToast(status === "active" ? "记忆已启用" : "记忆已拒绝");
+  await loadMemories();
+}
+
+async function downgradeMemory(memoryId) {
+  await fetchJson(`${SERVER}/memory/${memoryId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tier: "short" }),
+  });
+  showToast("已降级为短期记忆");
   await loadMemories();
 }
 
@@ -382,12 +469,14 @@ dom.chatForm.addEventListener("submit", (e) => {
 });
 dom.memoryFilterPending.addEventListener("click", () => {
   state.memoryFilter = "pending";
+  state.tierFilter = "all";
   dom.memoryFilterPending.classList.add("active");
   dom.memoryFilterActive.classList.remove("active");
   loadMemories().catch(() => {});
 });
 dom.memoryFilterActive.addEventListener("click", () => {
   state.memoryFilter = "active";
+  state.tierFilter = "all";
   dom.memoryFilterActive.classList.add("active");
   dom.memoryFilterPending.classList.remove("active");
   loadMemories().catch(() => {});
