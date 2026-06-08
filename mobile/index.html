@@ -4,46 +4,35 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="CodeTogether Mobile Web App">
-  <title>CodeTogether Mobile</title>
+  <title>CodeTogether</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
-    <div>
+    <div id="topbar-main">
       <h1>CodeTogether</h1>
-      <p class="subtitle">手机查看 Agent 状态、聊天与记忆审核</p>
+      <span id="conn-status" class="conn-status disconnected">未连接</span>
     </div>
-    <span id="conn-status" class="conn-status disconnected">未连接</span>
+    <button id="back-btn" class="back-btn" type="button" style="display:none">← 返回</button>
   </header>
 
   <main class="page-shell">
-    <section id="view-status" class="view active">
-      <div class="card">
-        <h2>运行状态</h2>
-        <div id="session-list" class="session-list"></div>
-      </div>
-      <div class="card">
-        <h2>最近事件</h2>
-        <div id="event-list" class="event-list"></div>
-      </div>
+    <!-- 状态页：按项目分类展示 agent 列表 -->
+    <section id="view-agents" class="view active">
+      <div id="project-groups"></div>
     </section>
 
+    <!-- 聊天页：点击 agent 后进入 -->
     <section id="view-chat" class="view">
-      <div class="card">
-        <label for="chat-session-select">目标 Session</label>
-        <select id="chat-session-select"></select>
-      </div>
-      <div class="card">
-        <h2>聊天历史</h2>
-        <div id="chat-history" class="chat-history"></div>
-      </div>
+      <div id="chat-agent-info" class="chat-agent-info"></div>
+      <div id="chat-history" class="chat-history"></div>
       <form id="chat-form" class="chat-form">
         <textarea id="chat-input" rows="3" placeholder="输入发给 Agent 的消息"></textarea>
         <button id="chat-send" type="submit">发送</button>
       </form>
-      <p class="hint">消息会在 Agent 下一次工具调用时送达。</p>
     </section>
 
+    <!-- 记忆页 -->
     <section id="view-memory" class="view">
       <div class="card">
         <div class="memory-toolbar">
@@ -56,9 +45,8 @@
   </main>
 
   <nav class="tab-bar">
-    <button id="tab-status" class="tab-btn active" data-tab="status" type="button">状态</button>
-    <button id="tab-chat" class="tab-btn" data-tab="chat" type="button">聊天</button>
-    <button id="tab-memory" class="tab-btn" data-tab="memory" type="button">记忆</button>
+    <button class="tab-btn active" data-tab="agents" type="button">Agent</button>
+    <button class="tab-btn" data-tab="memory" type="button">记忆</button>
   </nav>
 
   <div id="toast" class="toast"></div>

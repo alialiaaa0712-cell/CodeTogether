@@ -185,7 +185,32 @@ async def update_notes(session_id: str, body: NotesUpdate, request: Request, db:
     return session
 
 
-def _trigger_extraction(session_id: str, project_id: Optional[str]) -> None:
+@router.delete("/{session_id}", status_code=204)
+async def delete_session(session_id: str, request: Request, db: DBSession = Depends(get_db)):
+    """
+    删除指定会话及其关联的消息和事件记录。
+
+    参数:
+        session_id: 目标会话 ID。
+        request: 当前请求对象，用于广播删除事件。
+        db: 数据库会话。
+    """
+    from server.models import Message as MessageModel, Event as EventModel
+    session = db.get(SessionModel, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="session not found")
+    db.query(MessageModel).filter(MessageModel.session_id == session_id).delete()
+    db.query(EventModel).filter(EventModel.session_id == session_id).delete()
+    db.delete(session)
+    db.commit()
+    try:
+        manager = request.app.state.ws_manager
+        await manager.broadcast({"type": "agent_deleted", "data": {"id": session_id}})
+    except Exception:
+        pass
+
+
+
     """异步触发知识提炼，在后台线程中运行，不阻塞 HTTP 响应。"""
     import threading
     from server.services.extractor import extract_memories

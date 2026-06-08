@@ -71,12 +71,16 @@ class EventOut(BaseModel):
 class MessageCreate(BaseModel):
     session_id: str
     content: str
+    role: str = "user"
+    source_uuid: Optional[str] = None
+    created_at: Optional[float] = None
 
 
 class MessageOut(BaseModel):
     id: str
     session_id: str
     content: str
+    role: str
     status: str
     created_at: float
 

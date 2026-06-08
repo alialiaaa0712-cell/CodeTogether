@@ -1,0 +1,40 @@
+{
+  "env": {
+    "CODETOGETHER_SERVER": "http://127.0.0.1:7879"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/qinepan/Desktop/search/CodeTogether/hooks/pre_tool.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/qinepan/Desktop/search/CodeTogether/hooks/post_tool.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /Users/qinepan/Desktop/search/CodeTogether/hooks/stop.py"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -84,6 +84,57 @@ def search_memory(query: str, project_id: str = None) -> list:
         return []
 
 
+def ensure_session(session_id: str, cwd: str = None) -> None:
+    """
+    确保 session 存在，不存在时静默创建，避免写消息时因 session 缺失而 404。
+
+    参数:
+        session_id: 目标会话 ID
+        cwd: 工作目录（可选）
+    """
+    try:
+        payload: dict = {"id": session_id}
+        if cwd:
+            payload["cwd"] = cwd
+        req = urllib.request.Request(
+            f"{SERVER}/agents",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=TIMEOUT)
+    except Exception:
+        pass
+
+
+def post_chat_message(session_id: str, content: str, role: str = "user", source_uuid: str = None, created_at: float = None) -> None:
+    """
+    向服务端写入一条聊天消息，失败时静默跳过。source_uuid 用于去重。
+
+    参数:
+        session_id: 目标会话 ID
+        content: 消息内容
+        role: 消息角色，user 或 assistant
+        source_uuid: JSONL 记录的 uuid，服务端用于幂等写入
+        created_at: 消息的原始 Unix 时间戳（秒），为空时由服务端用当前时间
+    """
+    try:
+        payload: dict = {"session_id": session_id, "content": content, "role": role}
+        if source_uuid:
+            payload["source_uuid"] = source_uuid
+        if created_at is not None:
+            payload["created_at"] = created_at
+        req = urllib.request.Request(
+            f"{SERVER}/chat",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=TIMEOUT)
+    except Exception:
+        pass
+
+
 def mark_stopped(session_id: str) -> None:
     """
     将指定会话状态标记为 stopped，失败时静默跳过。

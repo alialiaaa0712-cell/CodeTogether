@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 import uuid
 
-from sqlalchemy import BigInteger, Column, Enum, Float, ForeignKey, Index, String, Text
+from sqlalchemy import BigInteger, Column, Double, Enum, ForeignKey, Index, String, Text
 from sqlalchemy.orm import relationship
 
 from server.database import Base
@@ -20,7 +20,7 @@ class Project(Base):
     id = Column(String(36), primary_key=True, default=_uuid)
     name = Column(String(255), nullable=False)
     repo_url = Column(String(512))
-    created_at = Column(Float, default=time.time)
+    created_at = Column(Double, default=time.time)
 
     sessions = relationship("Session", back_populates="project")
     memories = relationship("Memory", back_populates="project")
@@ -37,8 +37,8 @@ class Session(Base):
     cwd = Column(String(512))
     model = Column(String(128))
     notes = Column(Text)
-    started_at = Column(Float, default=time.time)
-    ended_at = Column(Float)
+    started_at = Column(Double, default=time.time)
+    ended_at = Column(Double)
 
     project = relationship("Project", back_populates="sessions")
     events = relationship("Event", back_populates="session")
@@ -68,7 +68,7 @@ class Event(Base):
     input = Column(Text)
     output = Column(Text)
     duration_ms = Column(BigInteger)
-    created_at = Column(Float, default=time.time)
+    created_at = Column(Double, default=time.time)
 
     session = relationship("Session", back_populates="events")
 
@@ -78,14 +78,16 @@ class Event(Base):
 
 
 class Message(Base):
-    """聊天消息表：手机发给 Agent 的消息，hook 轮询取走。"""
+    """聊天消息表：手机发给 Agent 的消息及 Agent 的回复。"""
     __tablename__ = "messages"
 
     id = Column(String(36), primary_key=True, default=_uuid)
     session_id = Column(String(36), ForeignKey("sessions.id"), nullable=False)
     content = Column(Text, nullable=False)
+    role = Column(Enum("user", "assistant"), nullable=False, default="user")
     status = Column(Enum("pending", "delivered"), default="pending")
-    created_at = Column(Float, default=time.time)
+    source_uuid = Column(String(64), nullable=True, unique=True)
+    created_at = Column(Double, default=time.time)
 
     session = relationship("Session", back_populates="messages")
 
@@ -105,8 +107,8 @@ class Memory(Base):
     tags = Column(String(512))
     status = Column(Enum("pending", "active", "rejected"), default="pending")
     source_session_id = Column(String(36), ForeignKey("sessions.id"), nullable=True)
-    created_at = Column(Float, default=time.time)
-    activated_at = Column(Float)
+    created_at = Column(Double, default=time.time)
+    activated_at = Column(Double)
 
     project = relationship("Project", back_populates="memories")
 

@@ -81,27 +81,56 @@ body {
   font-size: 16px;
 }
 
-.session-list,
-.event-list,
-.chat-history,
-.memory-list {
+.chat-history {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
-.session-item,
-.event-item,
-.message-item,
-.memory-item {
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 12px;
-  background: #fbfdff;
+.bubble-row {
+  display: flex;
 }
 
-.session-row,
-.event-row,
+.bubble-row.user {
+  justify-content: flex-end;
+}
+
+.bubble-row.assistant {
+  justify-content: flex-start;
+}
+
+.bubble {
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 18px;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bubble.user {
+  background: #2563eb;
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.bubble.assistant {
+  background: #f3f4f6;
+  color: #111827;
+  border-bottom-left-radius: 4px;
+}
+
+.bubble-meta {
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.65;
+}
+
+.bubble-content {
+  margin: 0;
+}
+
 .memory-row {
   display: flex;
   align-items: center;
@@ -169,12 +198,6 @@ button.danger {
   background: #ef4444;
 }
 
-.chat-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 .hint {
   margin: 4px 2px 0;
   font-size: 12px;
@@ -210,7 +233,7 @@ button.danger {
   right: 0;
   bottom: 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   background: rgba(255, 255, 255, 0.96);
@@ -255,3 +278,141 @@ button.danger {
 .toast.visible {
   opacity: 1;
 }
+
+/* topbar 布局：标题区与返回按钮共用同一容器 */
+#topbar-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.back-btn {
+  background: transparent;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 6px 0;
+  width: auto;
+  border-radius: 0;
+}
+
+.agent-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  margin-left: 4px;
+  flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+
+.project-group {
+  margin-bottom: 16px;
+}
+
+.project-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0 4px 6px;
+}
+
+.agent-card {
+  width: 100%;
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  text-align: left;
+  color: #18212f;
+  font-weight: 400;
+}
+
+.agent-card-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-id {
+  flex: 1;
+  font-size: 13px;
+  font-family: "SF Mono", "Menlo", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-status-label {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.agent-status-label.active {
+  background: rgba(16, 185, 129, 0.12);
+  color: #065f46;
+}
+
+.agent-status-label.stopped {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+/* 聊天视图顶部 agent 信息栏 */
+.chat-agent-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 12px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+}
+
+/* 聊天视图撑满可视区域 */
+#view-chat {
+  display: none;
+  flex-direction: column;
+  height: calc(100vh - 56px - 56px - env(safe-area-inset-bottom));
+}
+
+#view-chat.active {
+  display: flex;
+}
+
+.chat-history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.chat-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.memory-item {
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.memory-item:last-child {
+  border-bottom: none;
+}
+

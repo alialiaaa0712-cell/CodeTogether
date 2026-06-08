@@ -13,10 +13,20 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 @router.post("", response_model=MessageOut)
 def send_message(body: MessageCreate, db: DBSession = Depends(get_db)):
-    """手机端发送消息，初始状态为 pending；会话不存在时返回 404。"""
+    """手机端发送消息，初始状态为 pending；会话不存在时返回 404。source_uuid 用于去重。"""
     if not db.get(SessionModel, body.session_id):
         raise HTTPException(status_code=404, detail="session not found")
-    msg = MessageModel(session_id=body.session_id, content=body.content)
+    if body.source_uuid:
+        existing = db.query(MessageModel).filter(MessageModel.source_uuid == body.source_uuid).first()
+        if existing:
+            return existing
+    msg = MessageModel(
+        session_id=body.session_id,
+        content=body.content,
+        role=body.role,
+        source_uuid=body.source_uuid,
+        created_at=body.created_at if body.created_at is not None else None,
+    )
     db.add(msg)
     db.commit()
     db.refresh(msg)
