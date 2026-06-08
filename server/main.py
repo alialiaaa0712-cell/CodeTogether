@@ -9,8 +9,13 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from server.database import Base, engine
+from contextlib import asynccontextmanager
+
+from apscheduler.schedulers.background import BackgroundScheduler
+
+from server.database import Base, SessionLocal, engine
 from server.routers import agents, chat, events, memory
+from server.services.housekeeping import run_memory_housekeeping
 from server.ws_manager import ConnectionManager
 
 logging.basicConfig(level=logging.INFO)
@@ -18,7 +23,27 @@ logging.basicConfig(level=logging.INFO)
 if not os.getenv("TESTING"):
     Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="CodeTogether")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """管理应用生命周期：启动定时任务，退出时关闭。"""
+    scheduler = BackgroundScheduler()
+
+    def _housekeeping_job():
+        """每日执行记忆清理任务的调度回调。"""
+        db = SessionLocal()
+        try:
+            run_memory_housekeeping(db)
+        finally:
+            db.close()
+
+    scheduler.add_job(_housekeeping_job, "cron", hour=2, minute=0)
+    scheduler.start()
+    yield
+    scheduler.shutdown(wait=False)
+
+
+app = FastAPI(title="CodeTogether", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
