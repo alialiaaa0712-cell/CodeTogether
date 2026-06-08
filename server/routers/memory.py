@@ -63,11 +63,7 @@ def search_memories(q: str, project_id: Optional[str] = None, db: DBSession = De
     results = _query("long").limit(3).all()
     if len(results) < 3:
         remaining = 3 - len(results)
-        existing_ids = {r.id for r in results}
-        short_results = [
-            r for r in _query("short").limit(remaining + len(existing_ids)).all()
-            if r.id not in existing_ids
-        ][:remaining]
+        short_results = _query("short").limit(remaining).all()
         results = results + short_results
     return results
 
@@ -137,6 +133,8 @@ def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(ge
     elif body.tier == "long":
         memory.tier = "long"
         memory.updated_at = now
+    else:
+        raise HTTPException(status_code=400, detail="请提供 status 或 tier 字段")
 
     db.commit()
     db.refresh(memory)
