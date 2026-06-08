@@ -56,4 +56,8 @@ def run_memory_housekeeping(db: DBSession) -> None:
     if expired:
         logger.info("housekeeping: %d review→rejected", len(expired))
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("housekeeping: 提交失败，已回滚")

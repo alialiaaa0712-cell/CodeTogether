@@ -27,20 +27,20 @@ if not os.getenv("TESTING"):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """管理应用生命周期：启动定时任务，退出时关闭。"""
-    scheduler = BackgroundScheduler()
-
-    def _housekeeping_job():
-        """每日执行记忆清理任务的调度回调。"""
-        db = SessionLocal()
-        try:
-            run_memory_housekeeping(db)
-        finally:
-            db.close()
-
-    scheduler.add_job(_housekeeping_job, "cron", hour=2, minute=0)
-    scheduler.start()
+    scheduler = None
+    if not os.getenv("TESTING"):
+        scheduler = BackgroundScheduler()
+        def _housekeeping_job():
+            db = SessionLocal()
+            try:
+                run_memory_housekeeping(db)
+            finally:
+                db.close()
+        scheduler.add_job(_housekeeping_job, "cron", hour=2, minute=0)
+        scheduler.start()
     yield
-    scheduler.shutdown(wait=False)
+    if scheduler is not None:
+        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="CodeTogether", lifespan=lifespan)
