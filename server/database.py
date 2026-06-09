@@ -14,7 +14,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:root@localhost:33
 
 # 模块导入时创建 engine；测试环境通过 conftest.py 的 dependency_overrides 绕过，
 # 但 Task 10 的 Base.metadata.create_all(bind=engine) 需要 DATABASE_URL 指向 SQLite 或真实 MySQL。
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=20, max_overflow=40)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
