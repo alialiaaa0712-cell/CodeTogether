@@ -413,7 +413,21 @@ button.danger {
   border-top: 1px solid #e5e7eb;
 }
 
-/* 工具调用行 */
+.tool-call.child-agent {
+  border-left-color: #3b82f6;
+  background: #f0f7ff;
+}
+
+.child-agent-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+  font-family: "SF Mono", "Menlo", monospace;
+  flex-shrink: 0;
+}
+
 .tool-call {
   margin: 2px 0;
   border-radius: 8px;

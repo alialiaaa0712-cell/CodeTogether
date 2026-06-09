@@ -96,14 +96,15 @@ function projectLabel(session) {
  * 渲染 Agent 列表页，按项目分组，每个 agent 是一张可点击的卡片。
  */
 function renderAgents() {
-  if (state.sessions.length === 0) {
+  if (!Array.isArray(state.sessions) || state.sessions.filter((s) => !s.parent_id).length === 0) {
     dom.projectGroups.innerHTML = '<div class="empty">暂无 Agent</div>';
     return;
   }
 
-  // 按项目分组
+  // 按项目分组，子 Agent（有 parent_id）不显示在列表
   const groups = {};
   [...state.sessions]
+    .filter((s) => !s.parent_id)
     .sort((a, b) => (b.started_at || 0) - (a.started_at || 0))
     .forEach((s) => {
       const label = projectLabel(s);
@@ -225,9 +226,12 @@ function renderChatHistory() {
         const durationStr = item.duration_ms ? ` · ${item.duration_ms}ms` : "";
         const statusIcon = item.done ? "✓" : "▶";
         const statusClass = item.done ? "post_tool" : "pre_tool";
-        return `<div class="tool-call">
+        const isChild = item.parent_session_id && item.parent_session_id !== state.selectedSessionId;
+        const childBadge = isChild ? `<span class="child-agent-badge">子 ${escapeHtml(item.session_id.slice(0, 8))}</span>` : "";
+        return `<div class="tool-call${isChild ? " child-agent" : ""}">
             <div class="tool-call-summary">
               <span class="tool-status ${statusClass}">${statusIcon}</span>
+              ${childBadge}
               <span class="tool-name">${escapeHtml(item.tool_name || "")}</span>
               <span class="tool-time">${escapeHtml(formatTime(item.created_at))}${escapeHtml(durationStr)}</span>
             </div>
@@ -345,7 +349,7 @@ async function loadChatHistory() {
   try {
     [messages, events] = await Promise.all([
       fetchJson(`${SERVER}/chat/${state.selectedSessionId}/history`),
-      fetchJson(`${SERVER}/events?session_id=${state.selectedSessionId}`),
+    fetchJson(`${SERVER}/events?session_id=${state.selectedSessionId}&include_children=true`),
     ]);
   } catch (e) {
     console.error("loadChatHistory fetch error", e);

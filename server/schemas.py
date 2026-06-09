@@ -35,6 +35,7 @@ class EventCreate(BaseModel):
     input: Optional[Dict[str, Any]] = None  # ORM 存 JSON 字符串，路由层负责转换
     output: Optional[str] = None
     duration_ms: Optional[int] = None
+    parent_session_id: Optional[str] = None
 
 
 class EventOut(BaseModel):
@@ -46,6 +47,7 @@ class EventOut(BaseModel):
     output: Optional[str] = None
     duration_ms: Optional[int] = None
     created_at: float
+    parent_session_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

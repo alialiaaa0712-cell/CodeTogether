@@ -38,6 +38,7 @@ async def _broadcast_session_update(request: Request, session: SessionModel) -> 
 async def receive_event(body: EventCreate, request: Request, db: DBSession = Depends(get_db)):
     """
     接收 hook 上报的工具调用事件；若会话首次出现，则先创建并广播会话快照，再广播事件本身。
+    若事件携带 parent_session_id，同时回写子 Session 的 parent_id（首次写入时）。
 
     参数:
         body: 事件上报请求体。
@@ -49,9 +50,16 @@ async def receive_event(body: EventCreate, request: Request, db: DBSession = Dep
     """
     created_session = None
     if not db.get(SessionModel, body.session_id):
-        created_session = SessionModel(id=body.session_id)
+        created_session = SessionModel(
+            id=body.session_id,
+            parent_id=body.parent_session_id,
+        )
         db.add(created_session)
         db.flush()
+    elif body.parent_session_id:
+        session = db.get(SessionModel, body.session_id)
+        if session and not session.parent_id:
+            session.parent_id = body.parent_session_id
 
     input_str = json.dumps(body.input, ensure_ascii=False) if body.input else None
     event = EventModel(
@@ -61,6 +69,7 @@ async def receive_event(body: EventCreate, request: Request, db: DBSession = Dep
         input=input_str,
         output=body.output,
         duration_ms=body.duration_ms,
+        parent_session_id=body.parent_session_id,
     )
     db.add(event)
     db.commit()
@@ -90,8 +99,23 @@ async def receive_event(body: EventCreate, request: Request, db: DBSession = Dep
 
 
 @router.get("", response_model=List[EventOut])
-def list_events(session_id: Optional[str] = None, db: DBSession = Depends(get_db)):
+def list_events(session_id: Optional[str] = None, include_children: bool = False, db: DBSession = Depends(get_db)):
+    """
+    列出事件；include_children=true 时同时包含所有子 Agent 的事件。
+
+    参数:
+        session_id: 可选，按会话 ID 过滤。
+        include_children: 为 true 时，同时返回 parent_session_id=session_id 的子事件。
+        db: 数据库会话。
+    """
     q = db.query(EventModel).order_by(EventModel.created_at.desc())
     if session_id:
-        q = q.filter(EventModel.session_id == session_id)
+        if include_children:
+            from sqlalchemy import or_
+            q = q.filter(or_(
+                EventModel.session_id == session_id,
+                EventModel.parent_session_id == session_id,
+            ))
+        else:
+            q = q.filter(EventModel.session_id == session_id)
     return q.limit(500).all()

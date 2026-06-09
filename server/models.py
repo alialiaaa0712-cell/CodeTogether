@@ -69,6 +69,7 @@ class Event(Base):
     output = Column(Text)
     duration_ms = Column(BigInteger)
     created_at = Column(Double, default=time.time)
+    parent_session_id = Column(String(36), nullable=True)
 
     session = relationship("Session", back_populates="events")
 
