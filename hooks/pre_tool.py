@@ -20,6 +20,22 @@ def _project_id_from_cwd(cwd: str) -> "str | None":
     return os.path.basename(cwd.rstrip("/"))
 
 
+def _query_from_input(tool_name: str, tool_input: dict) -> str:
+    """
+    从工具输入中提取有意义的查询词。
+
+    优先使用任务相关的文本字段（command、file_path、prompt 等），
+    回退到工具名，避免搜索词过于泛化。
+    """
+    if not isinstance(tool_input, dict):
+        return tool_name
+    for key in ("command", "description", "prompt", "query", "file_path", "new_string"):
+        val = tool_input.get(key)
+        if val and isinstance(val, str):
+            return val[:200]
+    return tool_name
+
+
 def main():
     """
     PreToolUse hook 主入口。
@@ -45,6 +61,8 @@ def main():
     cwd = data.get("cwd") or ""
     tool_name = data.get("tool_name") or ""
 
+    _common.ensure_session(agent_session_id, cwd=cwd)
+
     _common.post_event({
         "session_id": agent_session_id,
         "type": "pre_tool",
@@ -58,7 +76,8 @@ def main():
         print(f"\n[CodeTogether 消息]: {msg['content']}\n", flush=True)
 
     project_id = _project_id_from_cwd(cwd)
-    for mem in _common.search_memory(tool_name, project_id=project_id):
+    query = _query_from_input(tool_name, data.get("tool_input") or {})
+    for mem in _common.search_memory(query, project_id=project_id):
         print(f"\n[CodeTogether 记忆]: {mem['title']} — {mem['content']}\n", flush=True)
 
 
