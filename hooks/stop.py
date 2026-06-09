@@ -34,29 +34,51 @@ def _find_transcript(session_id: str, cwd: str) -> str:
     return matches[0] if matches else None
 
 
-def _extract_messages(path: str) -> list:
-    """
-    从 JSONL 文件提取所有人工输入的对话消息（user 和 assistant 文本块）。
+SYNC_STATE_DIR = os.path.expanduser("~/.claude/codetogether-sync")
 
+
+def _get_sync_offset(session_id: str) -> int:
+    """读取上次同步的文件字节偏移量，不存在时返回 0。"""
+    path = os.path.join(SYNC_STATE_DIR, f"{session_id}.offset")
+    try:
+        return int(open(path).read().strip())
+    except Exception:
+        return 0
+
+
+def _save_sync_offset(session_id: str, offset: int) -> None:
+    """持久化当前同步偏移量。"""
+    os.makedirs(SYNC_STATE_DIR, exist_ok=True)
+    open(os.path.join(SYNC_STATE_DIR, f"{session_id}.offset"), "w").write(str(offset))
+
+
+def _extract_messages(path: str, start_offset: int = 0) -> tuple:
+    """
+    从 JSONL 文件提取对话消息（user 和 assistant 文本块）。
+
+    start_offset 指定从哪个字节开始读，跳过已同步内容；
+    返回 (messages, end_offset)，end_offset 为读完后的文件位置。
     工具调用结果（tool_result）和纯工具调用（tool_use）不计入对话。
-    返回值按文件顺序排列，每条包含 uuid、role、text、timestamp。
     """
     messages = []
     with open(path, encoding="utf-8") as f:
-        for line in f:
+        f.seek(start_offset)
+        while True:
+            line = f.readline()
+            if not line:
+                break
             try:
                 record = json.loads(line)
             except Exception:
                 continue
             rtype = record.get("type")
-            if rtype not in ("user", "assistant"):
+            if rtype != "assistant":
                 continue
             content = record.get("message", {}).get("content", [])
             text_parts = []
             for block in content:
                 if not isinstance(block, dict):
                     continue
-                # 跳过工具调用和工具结果，只保留人工文本
                 if block.get("type") in ("tool_use", "tool_result"):
                     continue
                 if block.get("type") == "text" and block.get("text", "").strip():
@@ -65,29 +87,33 @@ def _extract_messages(path: str) -> list:
                 continue
             messages.append({
                 "uuid": record.get("uuid", ""),
-                "role": rtype,
+                "role": "assistant",
                 "text": "\n".join(text_parts),
                 "timestamp": record.get("timestamp", ""),
             })
-    return messages
+        end_offset = f.tell()
+    return messages, end_offset
 
 
 def sync_messages(session_id: str, cwd: str) -> None:
     """
-    读取 JSONL transcript，将 assistant 消息同步到服务端消息表。
+    读取 JSONL transcript 增量部分，将新的 assistant/user 消息同步到服务端消息表。
 
-    已存在的消息通过 uuid 去重（写入时带 uuid，服务端 upsert）。
+    通过字节偏移量记录上次同步位置，每次只处理新增内容，避免随对话增长重复发送。
     """
     path = _find_transcript(session_id, cwd)
     if not path:
         return
 
+    start_offset = _get_sync_offset(session_id)
+
     try:
-        messages = _extract_messages(path)
+        messages, end_offset = _extract_messages(path, start_offset)
     except Exception:
         return
 
     if not messages:
+        _save_sync_offset(session_id, end_offset)
         return
 
     _common.ensure_session(session_id, cwd=cwd)
@@ -100,6 +126,8 @@ def sync_messages(session_id: str, cwd: str) -> None:
             except Exception:
                 pass
         _common.post_chat_message(session_id, msg["text"], role=msg["role"], source_uuid=msg["uuid"], created_at=ts)
+
+    _save_sync_offset(session_id, end_offset)
 
 def main():
     """
