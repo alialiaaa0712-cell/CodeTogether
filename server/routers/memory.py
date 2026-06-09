@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
@@ -52,13 +53,19 @@ def search_memories(q: str, project_id: Optional[str] = None, db: DBSession = De
         )
         if project_id:
             qr = qr.filter(MemoryModel.project_id == project_id)
-        return qr.filter(
+        # 按空格/标点拆词，任意一个词命中 title/content/tags 即匹配
+        tokens = [t for t in re.split(r"[\s/\-.,;:]+", q) if len(t) >= 2][:10]
+        if not tokens:
+            tokens = [q]
+        word_conds = [
             or_(
-                MemoryModel.title.contains(q),
-                MemoryModel.content.contains(q),
-                MemoryModel.tags.contains(q),
+                MemoryModel.title.contains(t),
+                MemoryModel.content.contains(t),
+                MemoryModel.tags.contains(t),
             )
-        )
+            for t in tokens
+        ]
+        return qr.filter(or_(*word_conds))
 
     results = _query("long").limit(3).all()
     if len(results) < 3:
