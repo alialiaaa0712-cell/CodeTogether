@@ -22,10 +22,12 @@ logging.basicConfig(level=logging.INFO)
 
 if not os.getenv("TESTING"):
     Base.metadata.create_all(bind=engine)
-    from sqlalchemy import text
-    with engine.connect() as _conn:
-        _conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS parent_session_id VARCHAR(36)"))
-        _conn.commit()
+    from sqlalchemy import text, inspect
+    _insp = inspect(engine)
+    if "parent_session_id" not in [c["name"] for c in _insp.get_columns("events")]:
+        with engine.connect() as _conn:
+            _conn.execute(text("ALTER TABLE events ADD COLUMN parent_session_id VARCHAR(36)"))
+            _conn.commit()
 
 
 @asynccontextmanager
