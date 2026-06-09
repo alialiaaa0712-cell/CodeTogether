@@ -13,6 +13,7 @@ const state = {
   memoryFilter: "pending",
   tierFilter: "all",
   inChat: false,
+  chatPollTimer: null,
 };
 
 const dom = {
@@ -171,6 +172,11 @@ function openChat(sessionId) {
     console.error("加载聊天历史失败", e);
     showToast("聊天历史加载失败");
   });
+
+  clearInterval(state.chatPollTimer);
+  state.chatPollTimer = setInterval(() => {
+    if (state.inChat) loadChatHistory().catch(() => {});
+  }, 5000);
 }
 
 /**
@@ -178,6 +184,7 @@ function openChat(sessionId) {
  */
 function closeChat() {
   state.inChat = false;
+  clearInterval(state.chatPollTimer);
   Object.values(dom.views).forEach((v) => v.classList.remove("active"));
   dom.views.agents.classList.add("active");
   dom.topbarMain.style.display = "";
@@ -452,6 +459,11 @@ function connectWebSocket() {
     if (payload.type === "event") {
       state.events.unshift(payload.data);
       state.events = state.events.slice(0, 100);
+      if (state.inChat && payload.data.session_id === state.selectedSessionId) {
+        loadChatHistory().catch(() => {});
+      }
+    }
+    if (payload.type === "chat_message") {
       if (state.inChat && payload.data.session_id === state.selectedSessionId) {
         loadChatHistory().catch(() => {});
       }
