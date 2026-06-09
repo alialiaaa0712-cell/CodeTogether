@@ -105,7 +105,9 @@ def main():
     """
     Stop hook 主入口。
 
-    上报 stop 事件，同步 assistant 消息，然后标记会话为 stopped。
+    上报 stop 事件，同步 assistant 消息。
+    若服务端有 pending 消息，返回 continue 指令让 Claude 继续处理；
+    否则标记会话为 stopped。
     """
     try:
         data = json.loads(sys.stdin.read())
@@ -123,6 +125,12 @@ def main():
 
     if session_id:
         sync_messages(session_id, cwd)
+
+    messages = _common.poll_messages(session_id) if session_id else []
+    if messages:
+        combined = "\n".join(m["content"] for m in messages)
+        print(json.dumps({"continue": True, "message": combined}), flush=True)
+        return
 
     _common.mark_stopped(session_id)
 

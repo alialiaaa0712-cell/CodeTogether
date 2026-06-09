@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import threading
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session as DBSession
@@ -11,10 +13,31 @@ from server.schemas import MessageCreate, MessageOut
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
+def _wake_session(session_id: str, cwd: str, content: str) -> None:
+    """
+    在后台线程中通过 claude -p --resume 唤醒已停止的 session。
+
+    Claude 完成后 Stop hook 会自动同步消息并检查下一条 pending 消息，
+    无需在此处处理输出。
+    """
+    def _run():
+        try:
+            subprocess.run(
+                ["claude", "-p", "--resume", session_id, content],
+                cwd=cwd or None,
+                timeout=300,
+            )
+        except Exception:
+            pass
+    threading.Thread(target=_run, daemon=True).start()
+
+
 @router.post("", response_model=MessageOut)
 def send_message(body: MessageCreate, db: DBSession = Depends(get_db)):
-    """手机端发送消息，初始状态为 pending；会话不存在时返回 404。source_uuid 用于去重。"""
-    if not db.get(SessionModel, body.session_id):
+    """手机端发送消息，初始状态为 pending；会话不存在时返回 404。source_uuid 用于去重。
+    若会话已停止，后台唤醒 claude --resume 让其处理消息。"""
+    session = db.get(SessionModel, body.session_id)
+    if not session:
         raise HTTPException(status_code=404, detail="session not found")
     if body.source_uuid:
         existing = db.query(MessageModel).filter(MessageModel.source_uuid == body.source_uuid).first()
@@ -30,6 +53,10 @@ def send_message(body: MessageCreate, db: DBSession = Depends(get_db)):
     db.add(msg)
     db.commit()
     db.refresh(msg)
+
+    if session.status == "stopped":
+        _wake_session(body.session_id, session.cwd or "", body.content)
+
     return msg
 
 
