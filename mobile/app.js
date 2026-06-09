@@ -80,6 +80,7 @@ function setConnectionStatus(connected) {
 async function fetchJson(url, options = {}) {
   const resp = await fetch(url, options);
   if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+  if (resp.status === 204 || resp.headers.get("content-length") === "0") return null;
   return resp.json();
 }
 
@@ -249,17 +250,23 @@ function renderChatHistory() {
  * 渲染记忆列表。
  */
 function renderMemories() {
-  if (state.memories.length === 0) {
-    dom.memoryList.innerHTML = '<div class="empty">暂无记忆条目</div>';
-    return;
-  }
-
   const tierFilterHtml = state.memoryFilter === "active" ? `
     <div class="tier-filter">
       <button type="button" data-tier="all" class="${state.tierFilter === 'all' ? 'active' : ''}">全部</button>
       <button type="button" data-tier="long" class="${state.tierFilter === 'long' ? 'active' : ''}">长期</button>
       <button type="button" data-tier="short" class="${state.tierFilter === 'short' ? 'active' : ''}">短期</button>
     </div>` : "";
+
+  if (state.memories.length === 0) {
+    dom.memoryList.innerHTML = tierFilterHtml + '<div class="empty">暂无记忆条目</div>';
+    dom.memoryList.querySelectorAll(".tier-filter button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.tierFilter = btn.dataset.tier;
+        loadMemories().catch(() => {});
+      });
+    });
+    return;
+  }
 
   dom.memoryList.innerHTML = tierFilterHtml + state.memories.map((memory) => {
     const isReview = memory.status === "review";

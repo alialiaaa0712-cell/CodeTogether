@@ -128,6 +128,10 @@ def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(ge
     elif body.status is not None:
         if body.status == "review" and memory.status != "active":
             raise HTTPException(status_code=422, detail="仅 active 状态的记忆可标记为 review")
+        if body.status == "rejected":
+            db.delete(memory)
+            db.commit()
+            return memory
         memory.status = body.status
         if body.status == "active":
             memory.activated_at = now
