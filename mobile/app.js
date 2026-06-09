@@ -263,7 +263,8 @@ function renderMemories() {
 
   dom.memoryList.innerHTML = tierFilterHtml + state.memories.map((memory) => {
     const isReview = memory.status === "review";
-    const tierLabel = `<span class="tier-badge ${escapeHtml(memory.tier)}">${memory.tier === "long" ? "长期" : "短期"}</span>`;
+    const tierText = memory.tier === "long" ? "长期" : memory.tier === "short" ? "短期" : escapeHtml(memory.tier);
+    const tierLabel = `<span class="tier-badge ${escapeHtml(memory.tier)}">${tierText}</span>`;
     const actions = state.memoryFilter === "pending"
       ? `<div class="memory-actions">
           <button type="button" data-action="activate" data-id="${escapeHtml(memory.id)}">启用</button>
@@ -386,7 +387,7 @@ async function sendChatMessage() {
 async function loadMemories() {
   let url = `${SERVER}/memory?status=${state.memoryFilter}`;
   if (state.memoryFilter === "active" && state.tierFilter !== "all") {
-    url += `&tier=${state.tierFilter}`;
+    url += `&tier=${encodeURIComponent(state.tierFilter)}`;
   }
   state.memories = await fetchJson(url);
   renderMemories();
@@ -402,11 +403,15 @@ async function reviewMemory(memoryId, status) {
   await loadMemories();
 }
 
+/**
+ * 将长期记忆降级为短期并恢复 active 状态，供人工确认复查结果时使用。
+ * @param {string} memoryId - 记忆 ID
+ */
 async function downgradeMemory(memoryId) {
   await fetchJson(`${SERVER}/memory/${memoryId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tier: "short" }),
+    body: JSON.stringify({ tier: "short", status: "active" }),
   });
   showToast("已降级为短期记忆");
   await loadMemories();

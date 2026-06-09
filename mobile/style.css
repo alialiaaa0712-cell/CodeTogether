@@ -494,6 +494,7 @@ button.danger {
 
 .memory-review {
   border-left: 3px solid #f59e0b;
+  padding-left: 10px;
 }
 
 .tier-filter {

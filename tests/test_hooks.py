@@ -79,20 +79,17 @@ def test_poll_messages_empty_on_error():
 # --- search_memory ---
 
 def test_search_memory_returns_list(monkeypatch):
-    """验证 search_memory 在两段查询中正确合并结果。"""
+    """验证 search_memory 发出一次请求并返回服务端结果。"""
     m = import_common()
-    long_payload = [{"id": "1", "title": "T", "content": "C", "tags": "t", "tier": "long"}]
-    short_payload = []
+    payload = [{"id": "1", "title": "T", "content": "C", "tags": "t", "tier": "long"}]
     def fake_urlopen(req, timeout):
         resp = mock.MagicMock()
-        if "tier=long" in req.full_url:
-            resp.read.return_value = json.dumps(long_payload).encode()
-        else:
-            resp.read.return_value = json.dumps(short_payload).encode()
+        resp.read.return_value = json.dumps(payload).encode()
         return resp
     with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen) as mock_open:
         result = m.search_memory("pytest", project_id="proj-1")
-    assert result == long_payload
+    assert result == payload
+    assert mock_open.call_count == 1
     first_req = mock_open.call_args_list[0][0][0]
     assert "memory/search" in first_req.full_url
     assert "pytest" in first_req.full_url
@@ -389,24 +386,20 @@ def test_pre_tool_invalid_json_no_crash():
 
 
 def test_search_memory_two_stage():
-    """验证 search_memory 先查 long，不足 3 条时再补 short，共两次请求。"""
+    """验证 search_memory 只发一次请求（两段式逻辑已下沉到服务端）。"""
     m = import_common()
-    long_result = [{"id": "1", "tier": "long", "title": "L", "content": "c"}]
-    short_result = [{"id": "2", "tier": "short", "title": "S", "content": "c"}]
-
-    call_count = {"n": 0}
+    results_payload = [
+        {"id": "1", "tier": "long", "title": "L", "content": "c"},
+        {"id": "2", "tier": "short", "title": "S", "content": "c"},
+    ]
     def fake_urlopen(req, timeout):
-        call_count["n"] += 1
         resp = mock.MagicMock()
-        if "tier=long" in req.full_url:
-            resp.read.return_value = json.dumps(long_result).encode()
-        else:
-            resp.read.return_value = json.dumps(short_result).encode()
+        resp.read.return_value = json.dumps(results_payload).encode()
         return resp
 
-    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen) as mock_open:
         results = m.search_memory("test")
-    assert call_count["n"] == 2
+    assert mock_open.call_count == 1
     assert results[0]["tier"] == "long"
     assert results[1]["tier"] == "short"
 

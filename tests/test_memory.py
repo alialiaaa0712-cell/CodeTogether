@@ -114,7 +114,15 @@ def test_patch_downgrade(client):
     assert r.json()["status"] == "active"
 
 
-def test_list_filter_by_tier(client):
+
+
+def test_patch_to_review_rejects_pending(client):
+    """验证 pending 状态的记忆不能被标记为 review。"""
+    resp = client.post("/memory", json={"title": "t", "content": "c"})
+    mid = resp.json()["id"]
+    r = client.patch(f"/memory/{mid}", json={"status": "review"})
+    assert r.status_code == 422
+
     """验证 GET /memory?tier=... 能按 tier 筛选返回记忆。"""
     short_resp = client.post("/memory", json={"title": "s", "content": "c"})
     long_resp = client.post("/memory", json={"title": "l", "content": "c"})
