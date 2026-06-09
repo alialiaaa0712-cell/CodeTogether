@@ -61,6 +61,10 @@ async def create_session(body: SessionCreate, request: Request, db: DBSession = 
     """
     existing = db.get(SessionModel, body.id)
     if existing:
+        if body.cwd and not existing.cwd:
+            existing.cwd = body.cwd
+            db.commit()
+            db.refresh(existing)
         return existing
     session = SessionModel(**body.model_dump())
     db.add(session)
@@ -210,7 +214,7 @@ async def delete_session(session_id: str, request: Request, db: DBSession = Depe
         pass
 
 
-
+def _trigger_extraction(session_id: str, project_id: Optional[str]) -> None:
     """异步触发知识提炼，在后台线程中运行，不阻塞 HTTP 响应。"""
     import threading
     from server.services.extractor import extract_memories

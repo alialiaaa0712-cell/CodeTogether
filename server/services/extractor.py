@@ -5,7 +5,7 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-import anthropic
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +23,17 @@ def extract_memories(
     summary: str,
     project_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+    client = OpenAI(
+        api_key=os.getenv("ANTHROPIC_AUTH_TOKEN", ""),
+        base_url="https://oneapi-comate.baidu-int.com/v1",
+    )
     try:
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+        resp = client.chat.completions.create(
+            model="gpt-5.4",
             max_tokens=1024,
             messages=[{"role": "user", "content": _PROMPT.format(summary=summary)}],
         )
-        raw = resp.content[0].text.strip()
+        raw = resp.choices[0].message.content.strip()
         items = json.loads(raw)
         for item in items:
             item["project_id"] = project_id
