@@ -1,102 +1,81 @@
 # CodeTogether
 
-Claude Code Agent 团队协作平台。
+用手机监控和与 Claude Code Agent 交互的工具。通过 Claude Code Hooks 实时同步 Agent 状态、工具调用事件和聊天消息，并在手机浏览器中展示。
 
-## Hooks 安装
+## 功能
 
-项目已内置可直接使用的 Claude Code 配置文件：[.claude/settings.json](.claude/settings.json)。
+- **Agent 监控**：实时查看所有运行中/已停止的 Claude 会话及最近工具调用
+- **手机聊天**：给任意 Session 发消息，Agent 停止时自动唤醒并回复
+- **记忆管理**：审核 pending 记忆，启用或拒绝
+- **父子 Agent**：子 Agent 的工具调用在父 Agent 视图中合并展示，带蓝色标注
 
-其中包含：
-- `PreToolUse`：上报工具调用开始事件，并拉取待处理消息/相关记忆
-- `PostToolUse`：上报工具调用结果
-- `Stop`：上报会话停止状态
-- `CODETOGETHER_SERVER=http://127.0.0.1:7878`：默认指向本地启动的 CodeTogether 服务
+## 快速开始
 
-如果你希望手动安装到全局 `~/.claude/settings.json`，可参考下面内容：
-
-```json
-{
-  "env": {
-    "CODETOGETHER_SERVER": "http://127.0.0.1:7878"
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python /path/to/CodeTogether/hooks/pre_tool.py"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python /path/to/CodeTogether/hooks/post_tool.py"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python /path/to/CodeTogether/hooks/stop.py"
-          }
-        ]
-      }
-    ]
-  }
-}
+```bash
+git clone <repo>
+cd CodeTogether
+pip install -r requirements.txt
+python3 codetogether.py init
 ```
 
-将 `/path/to/CodeTogether` 替换为实际路径（如 `/Users/qinepan/Desktop/search/CodeTogether`）。
+`init` 命令会：
+1. 将 Hooks 注册到 `~/.claude/settings.json`
+2. 在本地 `7879` 端口启动服务
 
-## 手机 Web App
+手机浏览器访问 `http://<电脑IP>:7879/mobile/`
 
-启动服务后，在手机浏览器访问：
+## 命令
 
-- `http://<你的电脑 IP>:7878/mobile/index.html`
-- 本机调试：`http://127.0.0.1:7878/mobile/index.html`
+```bash
+python3 codetogether.py init              # 注册 Hooks + 启动服务（推荐首次使用）
+python3 codetogether.py start             # 仅启动服务
+python3 codetogether.py install-service   # 安装 launchd 服务（macOS 开机自启）
+python3 codetogether.py uninstall-service # 卸载 launchd 服务
+```
 
-页面能力：
-- **状态**：查看 Agent 状态与最近工具事件
-- **聊天**：给指定 Session 发送消息，并查看历史消息
-- **记忆**：审核 pending 记忆并启用 / 拒绝
+## 远程访问
 
-## 环境变量
+局域网内直接用电脑 IP 访问。跨网络推荐 Cloudflare Tunnel：
 
-服务启动时会自动读取项目根目录的 `.env` 文件。
+```bash
+brew install cloudflared
+cloudflared tunnel --url http://127.0.0.1:7879
+```
+
+会生成一个公网 HTTPS 地址，手机通过该地址访问即可。
+
+## 配置
+
+服务读取项目根目录 `.env` 文件（可选）：
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `CODETOGETHER_SERVER` | `http://localhost:8000` | CodeTogether 服务器地址 |
-| `DATABASE_URL` | `mysql+pymysql://root:root@localhost:3306/codetogether` | 服务端数据库连接串 |
-| `SERVER_PORT` | `7878` | `python server/main.py` 启动时使用的端口 |
+| `DATABASE_URL` | `sqlite:///<home>/.codetogether/data.db` | 数据库连接串，支持 MySQL |
 
-示例：
-
+MySQL 示例：
 ```bash
 DATABASE_URL=mysql+pymysql://user:password@localhost:3306/codetogether
-SERVER_PORT=7878
 ```
 
-## 服务器启动
+## 架构
 
-```bash
-pip install -r requirements.txt
-uvicorn server.main:app --reload --port 7878
+```
+Claude Code (本地)
+  └─ Hooks (pre_tool.py / post_tool.py / stop.py)
+       └─ HTTP → CodeTogether Server (FastAPI)
+                   ├─ SQLite / MySQL
+                   ├─ WebSocket 推送
+                   └─ /mobile/ 静态页面
+                         └─ 手机浏览器
 ```
 
-如果使用项目根目录 `.env`，直接执行以上命令即可；也可以显式指定：
+- **Hooks**：注册在 `~/.claude/settings.json`，每次工具调用/会话结束时自动触发
+- **stop.py**：会话结束时同步 assistant 消息到数据库；若有待处理手机消息则返回 `continue: true` 自动唤醒
+- **pre_tool.py**：工具调用前拉取手机消息注入上下文，并查询相关记忆
+- **Server**：FastAPI，默认 SQLite 零配置，支持 MySQL
+
+## 开发
 
 ```bash
-uvicorn --env-file .env server.main:app --reload --port 7878
+pytest tests/ -v   # 运行测试
 ```

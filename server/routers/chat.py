@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import threading
-from typing import List
+from typing import List, Set
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session as DBSession
 
@@ -12,14 +12,22 @@ from server.schemas import MessageCreate, MessageOut
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
+_waking: Set[str] = set()
+_waking_lock = threading.Lock()
+
 
 def _wake_session(session_id: str, cwd: str, content: str) -> None:
     """
     在后台线程中通过 claude -p --resume 唤醒已停止的 session。
 
-    content 作为新 user turn 传入，触发 Claude 处理；
-    消息在调用前已标记 delivered，避免 PreToolUse hook 重复注入。
+    使用 _waking 集合防止同一 session 并发启动多个唤醒进程；
+    唤醒结束后自动从集合移除，允许下次唤醒。
     """
+    with _waking_lock:
+        if session_id in _waking:
+            return
+        _waking.add(session_id)
+
     def _run():
         try:
             subprocess.run(
@@ -29,6 +37,10 @@ def _wake_session(session_id: str, cwd: str, content: str) -> None:
             )
         except Exception:
             pass
+        finally:
+            with _waking_lock:
+                _waking.discard(session_id)
+
     threading.Thread(target=_run, daemon=True).start()
 
 

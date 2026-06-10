@@ -13,7 +13,8 @@ from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from server.database import Base, SessionLocal, engine
+from server.database import Base, SessionLocal, engine, _is_sqlite
+from server.models import Message as MessageModel
 from server.routers import agents, chat, events, memory
 from server.services.housekeeping import run_memory_housekeeping
 from server.ws_manager import ConnectionManager
@@ -22,12 +23,13 @@ logging.basicConfig(level=logging.INFO)
 
 if not os.getenv("TESTING"):
     Base.metadata.create_all(bind=engine)
-    from sqlalchemy import text, inspect
-    _insp = inspect(engine)
-    if "parent_session_id" not in [c["name"] for c in _insp.get_columns("events")]:
-        with engine.connect() as _conn:
-            _conn.execute(text("ALTER TABLE events ADD COLUMN parent_session_id VARCHAR(36)"))
-            _conn.commit()
+    if not _is_sqlite:
+        from sqlalchemy import text, inspect
+        _insp = inspect(engine)
+        if "parent_session_id" not in [c["name"] for c in _insp.get_columns("events")]:
+            with engine.connect() as _conn:
+                _conn.execute(text("ALTER TABLE events ADD COLUMN parent_session_id VARCHAR(36)"))
+                _conn.commit()
 
 
 @asynccontextmanager
@@ -43,6 +45,23 @@ async def lifespan(app: FastAPI):
             finally:
                 db.close()
         scheduler.add_job(_housekeeping_job, "cron", hour=2, minute=0)
+
+        def _expire_pending_messages():
+            import time
+            db = SessionLocal()
+            try:
+                cutoff = time.time() - 300  # 5分钟
+                msgs = db.query(MessageModel).filter(
+                    MessageModel.status == "pending",
+                    MessageModel.created_at < cutoff,
+                ).all()
+                for m in msgs:
+                    m.status = "delivered"
+                if msgs:
+                    db.commit()
+            finally:
+                db.close()
+        scheduler.add_job(_expire_pending_messages, "interval", minutes=1)
         scheduler.start()
     yield
     if scheduler is not None:
