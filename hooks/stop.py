@@ -85,6 +85,9 @@ def _extract_messages(path: str, start_offset: int = 0) -> tuple:
                     text_parts.append(block["text"])
             if not text_parts:
                 continue
+            text = "\n".join(text_parts)
+            if text.startswith("API Error:"):
+                continue
             messages.append({
                 "uuid": record.get("uuid", ""),
                 "role": "assistant",
