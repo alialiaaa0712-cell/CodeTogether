@@ -543,9 +543,16 @@ button.danger {
   padding-left: 10px;
 }
 
-.memory-hit-hint {
+.memory-meta {
+  color: #111827;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+.memory-feedback-hint {
   color: #6b7280;
   font-size: 12px;
+  margin-top: 4px;
 }
 
 .tier-filter {

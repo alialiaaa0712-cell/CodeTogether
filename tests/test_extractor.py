@@ -41,6 +41,26 @@ def test_extract_memories_returns_list():
     assert result[0]["project_id"] == "proj-1"
 
 
+def test_extract_memories_returns_candidate_records_only():
+    """验证提炼结果只返回候选记忆记录，不携带旧命中语义。"""
+    fake_response = MagicMock()
+    fake_choice = MagicMock()
+    fake_choice.message.content = '[{"title":"DDL 约束","content":"MySQL 5.7 不能使用该 DDL，否则会导致迁移失败","tags":"mysql"}]'
+    fake_response.choices = [fake_choice]
+
+    with patch("server.services.extractor.OpenAI") as MockClient:
+        instance = MockClient.return_value
+        instance.chat.completions.create.return_value = fake_response
+        result = extract_memories("assistant: MySQL 5.7 不能使用该 DDL，否则会导致迁移失败", project_id="proj-1")
+
+    assert result == [{
+        "project_id": "proj-1",
+        "title": "DDL 约束",
+        "content": "MySQL 5.7 不能使用该 DDL，否则会导致迁移失败",
+        "tags": "mysql",
+    }]
+
+
 def test_extract_memories_handles_invalid_json():
     """提炼接口返回非 JSON 时，应返回空列表而不抛出异常。"""
     fake_response = MagicMock()

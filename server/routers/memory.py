@@ -9,13 +9,16 @@ from sqlalchemy.orm import Session as DBSession
 
 from server.database import get_db
 from server.models import Memory as MemoryModel
+from server.models import MemoryFeedbackLog as MemoryFeedbackLogModel
+from server.models import MemorySearchExposure as MemorySearchExposureModel
 from server.models import Session as SessionModel
-from server.schemas import MemoryCreate, MemoryOut, MemoryUpdate
+from server.schemas import MemoryCreate, MemoryFeedbackRequest, MemoryOut, MemorySearchRequest, MemoryUpdate
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 
-_REVIEW_HIT_THRESHOLD = 3
-_7_DAYS = 7 * 86400
+_REVIEW_SCORE_THRESHOLD = 3
+_DELETE_SCORE_THRESHOLD = -3
+_EXPOSURE_TTL_SECONDS = 3600
 
 
 def _resolve_project_id(
@@ -41,29 +44,135 @@ def _resolve_project_id(
     return fallback_project_id
 
 
-def _bump_short_memory_hit(memory: MemoryModel, now: float) -> None:
-    """
-    更新短期活跃记忆的 7 天命中统计，并在达到阈值后转入 review。
+def _tokenize_query(query: str) -> List[str]:
+    """将搜索词切分为可用于记忆检索的 token 列表。
 
     参数:
-        memory: 本次命中的记忆对象。
+        query: Agent 显式提供的搜索词。
+
+    返回值:
+        最多 10 个有效 token；若切分失败则退回原始 query。
+    """
+    tokens = [token for token in re.split(r"[\s/\-.,;:]+", query) if len(token) >= 2][:10]
+    if tokens:
+        return tokens
+    stripped_query = query.strip()
+    return [stripped_query] if stripped_query else []
+
+
+def _query_memories(
+    db: DBSession,
+    query: str,
+    project_id: Optional[str],
+    tier: str,
+    limit: int,
+) -> List[MemoryModel]:
+    """按 tier 查询命中的 active 记忆，并保持积分字段不变。
+
+    参数:
+        db: 数据库会话。
+        query: 搜索词。
+        project_id: 项目范围；为空时搜索全局记忆。
+        tier: 目标层级，仅支持 short 或 long。
+        limit: 本轮最多返回条数。
+
+    返回值:
+        匹配到的记忆列表。
+    """
+    tokens = _tokenize_query(query)
+    if not tokens or limit <= 0:
+        return []
+
+    memory_query = db.query(MemoryModel).filter(
+        MemoryModel.status == "active",
+        MemoryModel.tier == tier,
+    )
+    if project_id:
+        memory_query = memory_query.filter(MemoryModel.project_id == project_id)
+
+    token_filters = []
+    for token in tokens:
+        tag_filter = MemoryModel.tags.contains(token)
+        token_filters.append(or_(
+            MemoryModel.title.contains(token),
+            MemoryModel.content.contains(token),
+            tag_filter,
+        ))
+
+    return (
+        memory_query
+        .filter(or_(*token_filters))
+        .order_by(MemoryModel.updated_at.desc(), MemoryModel.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def _record_search_exposures(
+    db: DBSession,
+    session_id: str,
+    query: str,
+    memories: List[MemoryModel],
+    now: float,
+) -> None:
+    """记录当前会话本次搜索曝光，并清理过期曝光记录。
+
+    参数:
+        db: 数据库会话。
+        session_id: 发起搜索的会话 ID。
+        query: 本次搜索词。
+        memories: 本次返回给 Agent 的记忆列表。
         now: 当前时间戳。
 
     返回值:
         无。
     """
-    if memory.last_hit_at is None or now - memory.last_hit_at > _7_DAYS:
-        memory.hit_count_7d = 1
-    else:
-        memory.hit_count_7d += 1
+    db.query(MemorySearchExposureModel).filter(
+        MemorySearchExposureModel.session_id == session_id,
+        MemorySearchExposureModel.exposed_at < now - _EXPOSURE_TTL_SECONDS,
+    ).delete(synchronize_session=False)
 
-    memory.last_hit_at = now
-    memory.updated_at = now
+    for memory in memories:
+        db.add(MemorySearchExposureModel(
+            memory_id=memory.id,
+            session_id=session_id,
+            query=query,
+            exposed_at=now,
+        ))
 
-    if memory.hit_count_7d >= _REVIEW_HIT_THRESHOLD:
-        memory.status = "review"
-        memory.review_reason = "hit_threshold"
-        memory.review_hit_count = memory.hit_count_7d
+
+def _was_exposed_to_session(db: DBSession, session_id: str, memory_id: str, now: float) -> bool:
+    """判断指定记忆是否曾在曝光有效期内返回给当前会话。
+
+    参数:
+        db: 数据库会话。
+        session_id: 提交反馈的会话 ID。
+        memory_id: 目标记忆 ID。
+        now: 当前时间戳。
+
+    返回值:
+        若命中有效曝光记录则返回 True，否则返回 False。
+    """
+    return db.query(MemorySearchExposureModel).filter(
+        MemorySearchExposureModel.session_id == session_id,
+        MemorySearchExposureModel.memory_id == memory_id,
+        MemorySearchExposureModel.exposed_at >= now - _EXPOSURE_TTL_SECONDS,
+    ).first() is not None
+
+
+def _delete_memory_with_relations(db: DBSession, memory: MemoryModel) -> None:
+    """删除记忆及其关联曝光、反馈记录，避免外键残留。
+
+    参数:
+        db: 数据库会话。
+        memory: 目标记忆 ORM 对象。
+
+    返回值:
+        无。
+    """
+    db.query(MemoryFeedbackLogModel).filter(MemoryFeedbackLogModel.memory_id == memory.id).delete(synchronize_session=False)
+    db.query(MemorySearchExposureModel).filter(MemorySearchExposureModel.memory_id == memory.id).delete(synchronize_session=False)
+    db.delete(memory)
 
 
 @router.post("", response_model=MemoryOut)
@@ -85,70 +194,79 @@ def create_memory(body: MemoryCreate, db: DBSession = Depends(get_db)):
     return memory
 
 
-@router.get("/search", response_model=List[MemoryOut])
-def search_memories(
-    q: str,
-    project_id: Optional[str] = None,
-    session_id: Optional[str] = None,
-    db: DBSession = Depends(get_db),
-):
-    """
-    搜索记忆：先返回 long+active，不足 3 条再补 short+active，合计最多 3 条。
+@router.post("/search", response_model=List[MemoryOut])
+def search_memories(body: MemorySearchRequest, db: DBSession = Depends(get_db)):
+    """按 Agent 显式给出的 query 搜索记忆，并记录本次曝光。
 
     参数:
-        q: 搜索关键词，匹配 title/content/tags。
-        project_id: 可选项目 ID 过滤。
-        session_id: 可选会话 ID，用于优先解析当前项目范围。
+        body: 搜索请求体，包含 query、session_id 与返回条数上限。
         db: 数据库会话。
 
     返回值:
-        匹配的记忆列表，长期记忆优先。
+        命中的 active 记忆列表；优先返回长期记忆，再补足短期记忆。
     """
-    resolved_project_id = _resolve_project_id(db, session_id, project_id)
+    resolved_project_id = _resolve_project_id(db, body.session_id, None)
+    limit = max(1, min(body.limit, 10))
 
-    def _query(tier: str):
-        qr = db.query(MemoryModel).filter(
-            MemoryModel.status == "active",
-            MemoryModel.tier == tier,
-        )
-        if resolved_project_id:
-            qr = qr.filter(MemoryModel.project_id == resolved_project_id)
-        # 按空格/标点拆词，任意一个词命中 title/content/tags 即匹配
-        tokens = [t for t in re.split(r"[\s/\-.,;:]+", q) if len(t) >= 2][:10]
-        if not tokens:
-            tokens = [q]
-        word_conds = [
-            or_(
-                MemoryModel.title.contains(t),
-                MemoryModel.content.contains(t),
-                MemoryModel.tags.contains(t),
-            )
-            for t in tokens
-        ]
-        return qr.filter(or_(*word_conds))
+    long_memories = _query_memories(db, body.query, resolved_project_id, "long", limit)
+    remaining = limit - len(long_memories)
+    short_memories = _query_memories(db, body.query, resolved_project_id, "short", remaining)
+    memories = long_memories + short_memories
 
-    results = _query("long").limit(3).all()
-    remaining = 3 - len(results)
     now = time.time()
-    changed = False
+    _record_search_exposures(db, body.session_id, body.query, memories, now)
+    db.commit()
+    return memories
 
-    if remaining > 0:
-        short_results = []
-        for memory in _query("short").all():
-            if len(short_results) >= remaining:
-                break
-            _bump_short_memory_hit(memory, now)
-            changed = True
-            if memory.status == "active":
-                short_results.append(memory)
-        results = results + short_results
 
-    if changed:
+@router.post("/{memory_id}/feedback", response_model=MemoryOut)
+def submit_memory_feedback(memory_id: str, body: MemoryFeedbackRequest, db: DBSession = Depends(get_db)):
+    """提交 Agent 对记忆的显式反馈，并按累计积分驱动状态流转。
+
+    参数:
+        memory_id: 目标记忆 ID。
+        body: 反馈请求体，包含 session_id、score 与 reason。
+        db: 数据库会话。
+
+    返回值:
+        更新后的记忆；若短期记忆达到负阈值则返回删除前快照。
+    """
+    memory = db.get(MemoryModel, memory_id)
+    if not memory:
+        raise HTTPException(status_code=404, detail="memory not found")
+
+    now = time.time()
+    if not _was_exposed_to_session(db, body.session_id, memory_id, now):
+        raise HTTPException(status_code=400, detail="memory must be exposed before feedback")
+
+    memory.score_total += body.score
+    memory.feedback_count += 1
+    memory.last_feedback_at = now
+    memory.updated_at = now
+
+    db.add(MemoryFeedbackLogModel(
+        memory_id=memory.id,
+        session_id=body.session_id,
+        feedback=str(body.score),
+        score_delta=body.score,
+        reason=body.reason,
+        created_at=now,
+    ))
+
+    if memory.tier == "short" and memory.score_total >= _REVIEW_SCORE_THRESHOLD:
+        memory.status = "review"
+        memory.review_reason = "score_threshold"
+        memory.review_score = memory.score_total
+
+    if memory.tier == "short" and memory.score_total <= _DELETE_SCORE_THRESHOLD:
+        snapshot = MemoryOut.model_validate(memory)
+        _delete_memory_with_relations(db, memory)
         db.commit()
-        for memory in results:
-            db.refresh(memory)
+        return snapshot
 
-    return results
+    db.commit()
+    db.refresh(memory)
+    return memory
 
 
 @router.get("", response_model=List[MemoryOut])

@@ -10,6 +10,14 @@ from server.database import Base
 
 
 def _uuid() -> str:
+    """生成主键使用的 UUID 字符串。
+
+    参数:
+        无。
+
+    返回值:
+        新生成的 UUID 字符串。
+    """
     return str(uuid.uuid4())
 
 
@@ -113,13 +121,53 @@ class Memory(Base):
     source_session_id = Column(String(36), ForeignKey("sessions.id"), nullable=True)
     created_at = Column(Double, default=time.time)
     activated_at = Column(Double)
-    hit_count_7d = Column(Integer, nullable=False, default=0)
-    last_hit_at = Column(Double)
+    score_total = Column(Integer, nullable=False, default=0)
+    feedback_count = Column(Integer, nullable=False, default=0)
+    last_feedback_at = Column(Double)
+    review_score = Column(Integer)
     review_reason = Column(String(255))
-    review_hit_count = Column(Integer)
 
     project = relationship("Project", back_populates="memories")
+    feedback_logs = relationship("MemoryFeedbackLog", back_populates="memory")
+    search_exposures = relationship("MemorySearchExposure", back_populates="memory")
 
     __table_args__ = (
         Index("ix_memories_project_status", "project_id", "status"),
+    )
+
+
+class MemoryFeedbackLog(Base):
+    """记忆反馈日志表：记录每次显式反馈，为后续反馈闭环保留审计数据。"""
+    __tablename__ = "memory_feedback_logs"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    memory_id = Column(String(36), ForeignKey("memories.id"), nullable=False)
+    session_id = Column(String(36), ForeignKey("sessions.id"), nullable=True)
+    feedback = Column(String(32), nullable=False)
+    score_delta = Column(Integer, nullable=False, default=0)
+    reason = Column(Text)
+    created_at = Column(Double, default=time.time, nullable=False)
+
+    memory = relationship("Memory", back_populates="feedback_logs")
+
+    __table_args__ = (
+        Index("ix_memory_feedback_logs_memory_created", "memory_id", "created_at"),
+    )
+
+
+class MemorySearchExposure(Base):
+    """记忆搜索曝光表：记录显式搜索结果曝光，供后续反馈与去重链路使用。"""
+    __tablename__ = "memory_search_exposures"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    memory_id = Column(String(36), ForeignKey("memories.id"), nullable=False)
+    session_id = Column(String(36), ForeignKey("sessions.id"), nullable=True)
+    query = Column(String(512), nullable=False)
+    exposed_at = Column(Double, default=time.time, nullable=False)
+
+    memory = relationship("Memory", back_populates="search_exposures")
+
+    __table_args__ = (
+        Index("ix_memory_search_exposures_exposed_at", "exposed_at"),
+        Index("ix_memory_search_exposures_memory_session", "memory_id", "session_id"),
     )

@@ -1,7 +1,6 @@
 """hooks 共用的 HTTP 工具函数。"""
 import json
 import os
-import urllib.parse
 import urllib.request
 
 SERVER = os.environ.get("CODETOGETHER_SERVER", "http://localhost:8000")
@@ -61,30 +60,63 @@ def poll_messages(session_id: str) -> list:
         return []
 
 
-def search_memory(query: str, project_id: str = None, session_id: str = None) -> list:
+def memory_search(query: str, session_id: str, limit: int = 3) -> list:
     """
-    搜索记忆，优先按 session_id 让服务端解析当前项目，project_id 仅作回退。
+    显式搜索记忆，按 session_id 让服务端自动解析项目范围。
 
     参数:
         query: 搜索关键词。
-        project_id: 可选项目 ID 回退值。
-        session_id: 可选会话 ID，用于让服务端优先解析项目范围。
+        session_id: 当前会话 ID。
+        limit: 最多返回条数。
 
     返回值:
-        最多 3 条匹配的记忆列表，长期记忆优先。
+        命中的记忆列表；失败时返回空列表。
     """
     try:
-        params = {"q": query}
-        if project_id:
-            params["project_id"] = project_id
-        if session_id:
-            params["session_id"] = session_id
-        url = f"{SERVER}/memory/search?" + urllib.parse.urlencode(params)
-        req = urllib.request.Request(url, method="GET")
+        req = urllib.request.Request(
+            f"{SERVER}/memory/search",
+            data=json.dumps({
+                "query": query,
+                "session_id": session_id,
+                "limit": limit,
+            }).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         resp = urllib.request.urlopen(req, timeout=TIMEOUT)
         return json.loads(resp.read())
     except Exception:
         return []
+
+
+def memory_feedback(memory_id: str, session_id: str, score: int, reason: str):
+    """
+    显式提交记忆反馈，失败时返回 None。
+
+    参数:
+        memory_id: 目标记忆 ID。
+        session_id: 当前会话 ID。
+        score: 反馈分值，只允许服务端定义的离散值。
+        reason: 反馈原因。
+
+    返回值:
+        服务端返回的记忆对象；失败时返回 None。
+    """
+    try:
+        req = urllib.request.Request(
+            f"{SERVER}/memory/{memory_id}/feedback",
+            data=json.dumps({
+                "session_id": session_id,
+                "score": score,
+                "reason": reason,
+            }).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        resp = urllib.request.urlopen(req, timeout=TIMEOUT)
+        return json.loads(resp.read())
+    except Exception:
+        return None
 
 
 def ensure_session(session_id: str, cwd: str = None) -> None:
@@ -157,23 +189,3 @@ def mark_stopped(session_id: str) -> None:
         pass
 
 
-def flag_memory_for_review(memory_id: str) -> None:
-    """
-    将指定记忆标记为 review 状态，供 Agent 发现长期记忆与项目实际情况不符时调用。
-
-    参数:
-        memory_id: 需要标记的记忆 ID。
-
-    返回值:
-        无。
-    """
-    try:
-        req = urllib.request.Request(
-            f"{SERVER}/memory/{memory_id}",
-            data=json.dumps({"status": "review"}).encode(),
-            headers={"Content-Type": "application/json"},
-            method="PATCH",
-        )
-        urllib.request.urlopen(req, timeout=TIMEOUT)
-    except Exception:
-        pass

@@ -62,6 +62,14 @@ function formatTime(ts) {
 }
 
 /**
+ * 将最近反馈时间格式化为可读文案，缺失时返回“暂无反馈”。
+ */
+function formatFeedbackTime(ts) {
+  if (!ts) return "暂无反馈";
+  return new Date(ts * 1000).toLocaleString("zh-CN", { hour12: false });
+}
+
+/**
  * 显示底部提示气泡，并在短暂延迟后自动隐藏。
  */
 function showToast(text) {
@@ -328,7 +336,12 @@ function renderMemories() {
     const isReview = memory.status === "review";
     const tierText = memory.tier === "long" ? "长期" : memory.tier === "short" ? "短期" : escapeHtml(memory.tier);
     const tierLabel = `<span class="tier-badge ${escapeHtml(memory.tier)}">${tierText}</span>`;
-    const hitHint = ` · 7天命中 ${escapeHtml(memory.hit_count_7d ?? 0)} 次`;
+    const scoreText = `累计积分 ${escapeHtml(memory.score_total ?? 0)}`;
+    const feedbackText = `反馈 ${escapeHtml(memory.feedback_count ?? 0)} 次`;
+    const reviewText = state.memoryFilter === "review" && memory.review_score != null
+      ? ` · 晋升分 ${escapeHtml(memory.review_score)}`
+      : "";
+    const feedbackHint = `最近反馈 ${escapeHtml(formatFeedbackTime(memory.last_feedback_at))}`;
     const actions = state.memoryFilter === "pending"
       ? `<div class="memory-actions">
           <button type="button" data-action="activate" data-id="${escapeHtml(memory.id)}">启用</button>
@@ -346,7 +359,9 @@ function renderMemories() {
           <strong>${escapeHtml(memory.title)}</strong>${tierLabel}
           <span>${escapeHtml(memory.status)}</span>
         </div>
-        <div class="hint">tags: ${escapeHtml(memory.tags || "—")} · ${escapeHtml(formatTime(memory.updated_at || memory.created_at))}${hitHint}</div>
+        <div class="hint">tags: ${escapeHtml(memory.tags || "—")} · ${escapeHtml(formatTime(memory.updated_at || memory.created_at))}</div>
+        <div class="memory-meta">${scoreText} · ${feedbackText}${reviewText}</div>
+        <div class="memory-feedback-hint">${feedbackHint}</div>
         <div>${escapeHtml(memory.content)}</div>
         ${actions}
       </div>
@@ -498,7 +513,7 @@ async function promoteMemory(memoryId) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ tier: "long" }),
   });
-  showToast("已升为长期记忆");
+  showToast("记忆已升为长期");
   await loadMemories();
 }
 

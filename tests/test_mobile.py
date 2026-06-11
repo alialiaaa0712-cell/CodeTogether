@@ -70,7 +70,7 @@ def test_mobile_assets_are_served(client):
 
 def test_mobile_shell_contains_core_views_and_tabs(client):
     """
-    验证移动端页面骨架包含三个视图容器与三个标签按钮的契约。
+    验证移动端页面骨架包含 Agent、聊天、记忆三个视图，以及底部两个主标签。
 
     参数:
         client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
@@ -79,17 +79,16 @@ def test_mobile_shell_contains_core_views_and_tabs(client):
         无返回值；断言页面 HTML 中包含视图与标签按钮的关键标识。
     """
     html = client.get("/mobile/index.html").text
-    assert 'id="view-status"' in html
+    assert 'id="view-agents"' in html
     assert 'id="view-chat"' in html
     assert 'id="view-memory"' in html
-    assert 'id="tab-status"' in html
-    assert 'id="tab-chat"' in html
-    assert 'id="tab-memory"' in html
+    assert 'data-tab="agents"' in html
+    assert 'data-tab="memory"' in html
 
 
-def test_mobile_shell_uses_status_view_as_default_active_tab(client):
+def test_mobile_shell_uses_agents_view_as_default_active_tab(client):
     """
-    验证移动端页面默认激活状态页，并为三个标签按钮声明正确的 data-tab。
+    验证移动端页面默认激活 Agent 列表页，并为底部标签声明正确的 data-tab。
 
     参数:
         client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
@@ -98,10 +97,9 @@ def test_mobile_shell_uses_status_view_as_default_active_tab(client):
         无返回值；断言默认视图与标签按钮的静态骨架契约符合预期。
     """
     html = client.get("/mobile/index.html").text
-    assert 'id="view-status" class="view active"' in html
-    assert 'id="tab-status" class="tab-btn active" data-tab="status"' in html
-    assert 'id="tab-chat" class="tab-btn" data-tab="chat"' in html
-    assert 'id="tab-memory" class="tab-btn" data-tab="memory"' in html
+    assert 'id="view-agents" class="view active"' in html
+    assert 'class="tab-btn active" data-tab="agents"' in html
+    assert 'class="tab-btn" data-tab="memory"' in html
 
 
 def test_mobile_shell_contains_connection_and_feedback_controls(client):
@@ -117,7 +115,7 @@ def test_mobile_shell_contains_connection_and_feedback_controls(client):
     html = client.get("/mobile/index.html").text
     assert 'id="conn-status"' in html
     assert 'id="toast"' in html
-    assert 'id="chat-session-select"' in html
+    assert 'id="chat-agent-info"' in html
     assert 'id="chat-form"' in html
     assert 'id="memory-list"' in html
     assert 'id="memory-filter-pending"' in html
@@ -330,7 +328,8 @@ def test_mobile_chat_script_contains_chat_endpoints(client):
     assert 'fetchJson(`${SERVER}/chat`, {' in js
     assert 'method: "POST"' in js
     assert '消息已发送，等待 Agent 下一次工具调用时接收' in js
-    assert 'if (payload.data.session_id === state.selectedSessionId)' in js
+    assert 'payload.data.session_id === state.selectedSessionId ||' in js
+    assert 'if (state.inChat && payload.data.session_id === state.selectedSessionId)' in js
 
 
 def test_mobile_memory_script_contains_review_actions(client):
@@ -346,11 +345,38 @@ def test_mobile_memory_script_contains_review_actions(client):
     js = client.get("/mobile/app.js").text
     assert "function loadMemories()" in js
     assert "function reviewMemory(memoryId, status)" in js
-    assert 'fetchJson(`${SERVER}/memory?status=${state.memoryFilter}`)' in js
+    assert 'let url = `${SERVER}/memory?status=${state.memoryFilter}`' in js
     assert 'fetchJson(`${SERVER}/memory/${memoryId}`, {' in js
     assert 'method: "PATCH"' in js
     assert '记忆已启用' in js
-    assert '记忆已拒绝' in js
+    assert '记忆已删除' in js
+
+
+def test_mobile_memory_script_shows_score_metrics_instead_of_hit_count(client):
+    """验证记忆页脚本展示累计积分与反馈次数，而不再展示 7 天命中。"""
+    js = client.get("/mobile/app.js").text
+    assert "累计积分" in js
+    assert "反馈" in js
+    assert "last_feedback_at" in js
+    assert "review_score" in js
+    assert "7天命中" not in js
+
+
+def test_mobile_memory_script_contains_promote_and_delete_actions(client):
+    """验证 review 区保留升为长期与删除动作。"""
+    js = client.get("/mobile/app.js").text
+    assert "async function promoteMemory(memoryId)" in js
+    assert "async function deleteMemory(memoryId)" in js
+    assert "记忆已升为长期" in js
+    assert "记忆已删除" in js
+
+
+def test_mobile_memory_html_contains_review_and_active_filters(client):
+    """验证记忆页仍有待启用、待晋升、已启用三个分区入口。"""
+    html = client.get("/mobile/index.html").text
+    assert 'id="memory-filter-pending"' in html
+    assert 'id="memory-filter-review"' in html
+    assert 'id="memory-filter-active"' in html
 
 
 def test_mobile_memory_html_contains_scope_toggle(client):
@@ -379,15 +405,23 @@ def test_mobile_memory_script_uses_delete_for_reject(client):
     assert "async function promoteMemory(memoryId)" in js
 
 
-def test_mobile_memory_script_always_shows_hit_count(client):
-    """验证记忆页会始终显示 7 天命中次数，包括 0 次。"""
+def test_mobile_memory_script_does_not_render_removed_hit_count(client):
+    """验证记忆页不再展示已移除的 hit 统计文案。
+
+    参数:
+        client: FastAPI 测试客户端，用于读取移动端脚本文本。
+
+    返回值:
+        无返回值；通过断言旧字段与旧文案都不存在来验证前端契约已切换。
+    """
     js = client.get("/mobile/app.js").text
-    assert '7天命中 ${escapeHtml(memory.hit_count_7d ?? 0)} 次' in js
+    assert "hit_count_7d" not in js
+    assert "7天命中" not in js
 
 
 def test_readme_mentions_mobile_entry():
     """
-    验证 README 已包含手机 Web App 入口与使用说明。
+    验证 README 已包含手机浏览器访问入口与使用说明。
 
     参数:
         无。
@@ -396,6 +430,6 @@ def test_readme_mentions_mobile_entry():
         无返回值；断言 README 中包含 mobile 入口地址与页面能力说明。
     """
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
-    assert "手机 Web App" in readme
-    assert "/mobile/index.html" in readme
-    assert "7878" in readme
+    assert "手机浏览器访问" in readme
+    assert "/mobile/" in readme
+    assert "7879" in readme

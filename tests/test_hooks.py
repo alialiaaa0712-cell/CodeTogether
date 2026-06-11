@@ -76,44 +76,71 @@ def test_poll_messages_empty_on_error():
     assert result == []
 
 
-# --- search_memory ---
+# --- memory_search / memory_feedback ---
 
-def test_search_memory_returns_list(monkeypatch):
-    """验证 search_memory 发出一次请求并返回服务端结果。"""
+def test_memory_search_posts_json_body():
+    """验证 memory_search 使用 POST JSON 请求体调用服务端。"""
     m = import_common()
-    payload = [{"id": "1", "title": "T", "content": "C", "tags": "t", "tier": "long"}]
+    payload = [{"id": "1", "title": "规则", "content": "内容", "tier": "long"}]
+
     def fake_urlopen(req, timeout):
         resp = mock.MagicMock()
         resp.read.return_value = json.dumps(payload).encode()
+        assert req.method == "POST"
+        assert req.full_url.endswith("/memory/search")
+        assert json.loads(req.data) == {
+            "query": "mysql ddl",
+            "session_id": "sess-1",
+            "limit": 3,
+        }
         return resp
-    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen) as mock_open:
-        result = m.search_memory("pytest", project_id="proj-1")
+
+    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        result = m.memory_search("mysql ddl", session_id="sess-1")
+
     assert result == payload
-    assert mock_open.call_count == 1
-    first_req = mock_open.call_args_list[0][0][0]
-    assert "memory/search" in first_req.full_url
-    assert "pytest" in first_req.full_url
 
 
-def test_search_memory_empty_on_error():
+def test_memory_search_empty_on_error():
+    """验证 memory_search 失败时返回空列表。"""
     m = import_common()
     with mock.patch("urllib.request.urlopen", side_effect=Exception("timeout")):
-        result = m.search_memory("query")
+        result = m.memory_search("query", session_id="sess-1")
     assert result == []
 
 
-def test_search_memory_includes_session_id_and_project_fallback():
-    """验证 search_memory 会同时携带 session_id 与 project_id 回退参数。"""
+def test_memory_feedback_posts_json_body():
+    """验证 memory_feedback 使用 POST JSON 请求体提交评分。"""
     m = import_common()
-    with mock.patch("urllib.request.urlopen") as mock_open:
-        response = mock.MagicMock()
-        response.read.return_value = json.dumps([]).encode()
-        mock_open.return_value = response
-        m.search_memory("pytest", project_id="proj-1", session_id="sess-1")
+    captured = {}
 
-    req = mock_open.call_args[0][0]
-    assert "session_id=sess-1" in req.full_url
-    assert "project_id=proj-1" in req.full_url
+    def fake_urlopen(req, timeout):
+        captured["method"] = req.method
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data)
+        resp = mock.MagicMock()
+        resp.read.return_value = json.dumps({"id": "mem-1", "score_total": 2}).encode()
+        return resp
+
+    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        result = m.memory_feedback("mem-1", session_id="sess-1", score=2, reason="确认了 DDL 边界")
+
+    assert result["score_total"] == 2
+    assert captured["method"] == "POST"
+    assert captured["url"].endswith("/memory/mem-1/feedback")
+    assert captured["body"] == {
+        "session_id": "sess-1",
+        "score": 2,
+        "reason": "确认了 DDL 边界",
+    }
+
+
+def test_memory_feedback_returns_none_on_error():
+    """验证 memory_feedback 失败时返回 None。"""
+    m = import_common()
+    with mock.patch("urllib.request.urlopen", side_effect=Exception("timeout")):
+        result = m.memory_feedback("mem-1", session_id="sess-1", score=1, reason="失败")
+    assert result is None
 
 
 # --- mark_stopped ---
@@ -407,7 +434,6 @@ def test_pre_tool_posts_event():
     m = import_pre_tool()
     with mock.patch("hooks._common.post_event") as mock_post, \
          mock.patch("hooks._common.poll_messages", return_value=[]), \
-         mock.patch("hooks._common.search_memory", return_value=[]), \
          mock.patch("sys.stdin") as mock_stdin:
         mock_stdin.read.return_value = json.dumps({
             "session_id": "s1",
@@ -428,7 +454,6 @@ def test_pre_tool_prints_messages(capsys):
     messages = [{"content": "请帮我优化这段代码"}, {"content": "记得加测试"}]
     with mock.patch("hooks._common.post_event"), \
          mock.patch("hooks._common.poll_messages", return_value=messages), \
-         mock.patch("hooks._common.search_memory", return_value=[]), \
          mock.patch("sys.stdin") as mock_stdin:
         mock_stdin.read.return_value = json.dumps({
             "session_id": "s1",
@@ -443,68 +468,29 @@ def test_pre_tool_prints_messages(capsys):
     assert "[CodeTogether 消息]" in out
 
 
-def test_pre_tool_prints_memories(capsys):
+def test_pre_tool_does_not_search_memory_automatically(capsys):
+    """验证 pre_tool 不再自动搜索或打印记忆内容。"""
     m = import_pre_tool()
-    memories = [{"title": "Bash 最佳实践", "content": "总是用 set -e"}]
     with mock.patch("hooks._common.post_event"), \
          mock.patch("hooks._common.poll_messages", return_value=[]), \
-         mock.patch("hooks._common.search_memory", return_value=memories), \
+         mock.patch("hooks._common.memory_search") as mock_search, \
          mock.patch("sys.stdin") as mock_stdin:
         mock_stdin.read.return_value = json.dumps({
             "session_id": "s1",
             "tool_name": "Bash",
-            "tool_input": {},
+            "tool_input": {"command": "ls"},
             "cwd": "/project",
         })
         m.main()
-    out = capsys.readouterr().out
-    assert "Bash 最佳实践" in out
-    assert "总是用 set -e" in out
-    assert "[CodeTogether 记忆]" in out
 
-
-def test_pre_tool_search_uses_tool_name_as_query():
-    m = import_pre_tool()
-    with mock.patch("hooks._common.post_event"), \
-         mock.patch("hooks._common.poll_messages", return_value=[]), \
-         mock.patch("hooks._common.search_memory", return_value=[]) as mock_search, \
-         mock.patch("sys.stdin") as mock_stdin:
-        mock_stdin.read.return_value = json.dumps({
-            "session_id": "s1",
-            "tool_name": "Edit",
-            "tool_input": {},
-            "cwd": "/Users/user/myproject",
-        })
-        m.main()
-    mock_search.assert_called_once()
-    call_kwargs = mock_search.call_args
-    query = call_kwargs[0][0] if call_kwargs[0] else call_kwargs[1]["query"]
-    assert "Edit" in query
-
-
-def test_pre_tool_cwd_infers_project_id():
-    m = import_pre_tool()
-    with mock.patch("hooks._common.post_event"), \
-         mock.patch("hooks._common.poll_messages", return_value=[]), \
-         mock.patch("hooks._common.search_memory", return_value=[]) as mock_search, \
-         mock.patch("sys.stdin") as mock_stdin:
-        mock_stdin.read.return_value = json.dumps({
-            "session_id": "s1",
-            "tool_name": "Read",
-            "tool_input": {},
-            "cwd": "/Users/user/myproject",
-        })
-        m.main()
-    call_kwargs = mock_search.call_args
-    project_id = call_kwargs[1].get("project_id") or (call_kwargs[0][1] if len(call_kwargs[0]) > 1 else None)
-    assert project_id == "myproject"
+    mock_search.assert_not_called()
+    assert "[CodeTogether 记忆]" not in capsys.readouterr().out
 
 
 def test_pre_tool_child_agent_parent_session():
     m = import_pre_tool()
     with mock.patch("hooks._common.post_event") as mock_post, \
          mock.patch("hooks._common.poll_messages", return_value=[]), \
-         mock.patch("hooks._common.search_memory", return_value=[]), \
          mock.patch("sys.stdin") as mock_stdin:
         mock_stdin.read.return_value = json.dumps({
             "session_id": "parent-uuid",
@@ -528,38 +514,22 @@ def test_pre_tool_invalid_json_no_crash():
     mock_post.assert_not_called()
 
 
-def test_search_memory_two_stage():
-    """验证 search_memory 只发一次请求（两段式逻辑已下沉到服务端）。"""
+def test_memory_search_single_request_order():
+    """验证 memory_search 只发一次请求，并保留服务端返回顺序。"""
     m = import_common()
     results_payload = [
         {"id": "1", "tier": "long", "title": "L", "content": "c"},
         {"id": "2", "tier": "short", "title": "S", "content": "c"},
     ]
+
     def fake_urlopen(req, timeout):
         resp = mock.MagicMock()
         resp.read.return_value = json.dumps(results_payload).encode()
         return resp
 
     with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen) as mock_open:
-        results = m.search_memory("test")
+        results = m.memory_search("test", session_id="sess-1")
+
     assert mock_open.call_count == 1
     assert results[0]["tier"] == "long"
     assert results[1]["tier"] == "short"
-
-
-def test_flag_memory_for_review():
-    """验证 flag_memory_for_review 发出 PATCH /memory/{id} 并设置 status=review。"""
-    m = import_common()
-    captured = {}
-    def fake_urlopen(req, timeout):
-        captured["method"] = req.method
-        captured["url"] = req.full_url
-        captured["body"] = json.loads(req.data)
-        return mock.MagicMock()
-
-    with mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        m.flag_memory_for_review("mem-123")
-
-    assert captured["method"] == "PATCH"
-    assert "mem-123" in captured["url"]
-    assert captured["body"]["status"] == "review"

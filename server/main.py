@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import inspect, text
 
 from server.database import Base, SessionLocal, engine, _is_sqlite
 from server.models import Message as MessageModel
@@ -21,38 +22,86 @@ from server.ws_manager import ConnectionManager
 
 logging.basicConfig(level=logging.INFO)
 
-if not os.getenv("TESTING"):
-    Base.metadata.create_all(bind=engine)
-    if not _is_sqlite:
-        from sqlalchemy import inspect, text
-        _insp = inspect(engine)
-        _event_cols = [c["name"] for c in _insp.get_columns("events")]
-        if "parent_session_id" not in _event_cols:
-            with engine.connect() as _conn:
-                _conn.execute(text("ALTER TABLE events ADD COLUMN parent_session_id VARCHAR(36)"))
-                _conn.commit()
-        if "tool_use_id" not in _event_cols:
-            with engine.connect() as _conn:
-                _conn.execute(text("ALTER TABLE events ADD COLUMN tool_use_id VARCHAR(64)"))
-                _conn.commit()
 
-        _memory_cols = [c["name"] for c in _insp.get_columns("memories")]
-        if "hit_count_7d" not in _memory_cols:
-            with engine.connect() as _conn:
-                _conn.execute(text("ALTER TABLE memories ADD COLUMN hit_count_7d INT NOT NULL DEFAULT 0"))
-                _conn.commit()
-        if "last_hit_at" not in _memory_cols:
-            with engine.connect() as _conn:
-                _conn.execute(text("ALTER TABLE memories ADD COLUMN last_hit_at DOUBLE NULL"))
-                _conn.commit()
-        if "review_reason" not in _memory_cols:
-            with engine.connect() as _conn:
-                _conn.execute(text("ALTER TABLE memories ADD COLUMN review_reason VARCHAR(255) NULL"))
-                _conn.commit()
-        if "review_hit_count" not in _memory_cols:
-            with engine.connect() as _conn:
-                _conn.execute(text("ALTER TABLE memories ADD COLUMN review_hit_count INT NULL"))
-                _conn.commit()
+def _ensure_event_columns() -> None:
+    """补齐 events 表的兼容列，保证旧库可以被当前服务读取。
+
+    参数:
+        无。
+
+    返回值:
+        无；缺失列时直接执行一次迁移。
+    """
+    inspector = inspect(engine)
+    event_cols = {column["name"] for column in inspector.get_columns("events")}
+    if "parent_session_id" not in event_cols:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE events ADD COLUMN parent_session_id VARCHAR(36)"))
+            conn.commit()
+    if "tool_use_id" not in event_cols:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE events ADD COLUMN tool_use_id VARCHAR(64)"))
+            conn.commit()
+
+
+def _migrate_memories_to_score_fields() -> None:
+    """为旧 hit-based memories 表执行一次性迁移。
+
+    参数:
+        无。
+
+    返回值:
+        无；若检测到旧 hit 结构，会先清空 `memories` 表，再补齐新 score 字段并删除旧列。
+    """
+    legacy_hit_columns = {"hit_count_7d", "last_hit_at", "review_hit_count"}
+    score_columns = {
+        "score_total": "ALTER TABLE memories ADD COLUMN score_total INT NOT NULL DEFAULT 0",
+        "feedback_count": "ALTER TABLE memories ADD COLUMN feedback_count INT NOT NULL DEFAULT 0",
+        "last_feedback_at": "ALTER TABLE memories ADD COLUMN last_feedback_at DOUBLE NULL",
+        "review_score": "ALTER TABLE memories ADD COLUMN review_score INT NULL",
+    }
+
+    with engine.connect() as conn:
+        inspector = inspect(engine)
+        memory_cols = {column["name"] for column in inspector.get_columns("memories")}
+
+        if legacy_hit_columns & memory_cols:
+            conn.execute(text("DELETE FROM memories"))
+            conn.commit()
+
+        for column_name, ddl in score_columns.items():
+            if column_name not in memory_cols:
+                conn.execute(text(ddl))
+                conn.commit()
+                memory_cols.add(column_name)
+
+        inspector = inspect(engine)
+        memory_cols = {column["name"] for column in inspector.get_columns("memories")}
+        for column_name in legacy_hit_columns:
+            if column_name in memory_cols:
+                conn.execute(text(f"ALTER TABLE memories DROP COLUMN {column_name}"))
+                conn.commit()
+
+
+def _run_startup_migrations() -> None:
+    """在非测试启动路径执行轻量迁移，兼容历史数据库结构。
+
+    参数:
+        无。
+
+    返回值:
+        无；若环境不是 sqlite，则按需补齐兼容列与记忆评分列。
+    """
+    Base.metadata.create_all(bind=engine)
+    if _is_sqlite:
+        return
+
+    _ensure_event_columns()
+    _migrate_memories_to_score_fields()
+
+
+if not os.getenv("TESTING"):
+    _run_startup_migrations()
 
 
 @asynccontextmanager

@@ -8,19 +8,47 @@ def test_create_memory(client):
     assert resp.json()["status"] == "pending"
 
 
-def test_create_memory_returns_hit_review_fields(client):
-    """验证创建记忆的响应包含命中统计与复习相关字段的默认值。"""
+from sqlalchemy import inspect
+
+
+def test_create_memory_returns_score_fields(client):
+    """验证创建记忆响应切换到 score 字段，并且不再暴露旧 hit 字段。
+
+    参数:
+        client: FastAPI 测试客户端，用于发起创建记忆请求。
+
+    返回值:
+        无返回值；通过断言响应结构验证新旧字段切换。
+    """
     resp = client.post("/memory", json={
-        "title": "记忆命中统计",
-        "content": "新建记忆需要返回默认统计字段",
+        "title": "记忆评分统计",
+        "content": "新建记忆需要返回默认评分字段",
     })
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["hit_count_7d"] == 0
-    assert data["last_hit_at"] is None
-    assert data["review_reason"] is None
-    assert data["review_hit_count"] is None
+    assert data["score_total"] == 0
+    assert data["feedback_count"] == 0
+    assert data["last_feedback_at"] is None
+    assert data["review_score"] is None
+    assert "hit_count_7d" not in data
+    assert "last_hit_at" not in data
+    assert "review_hit_count" not in data
+
+
+def test_memory_feedback_logs_and_search_exposures_tables_exist(engine):
+    """验证测试库已创建反馈日志与搜索曝光表。
+
+    参数:
+        engine: 测试数据库引擎，用于检查表结构。
+
+    返回值:
+        无返回值；通过断言表名存在验证新增模型已被建表。
+    """
+    table_names = set(inspect(engine).get_table_names())
+
+    assert "memory_feedback_logs" in table_names
+    assert "memory_search_exposures" in table_names
 
 
 def test_activate_memory(client):
@@ -32,7 +60,15 @@ def test_activate_memory(client):
     assert resp.json()["status"] == "active"
 
 
-def test_search_memory(client):
+def test_get_memory_search_is_unavailable(client):
+    """验证 GET /memory/search 已下线，避免继续暴露旧搜索入口。
+
+    参数:
+        client: FastAPI 测试客户端，用于请求旧搜索接口。
+
+    返回值:
+        无返回值；通过断言状态码验证接口不可用。
+    """
     mem_resp = client.post("/memory", json={
         "title": "FastAPI 路由注册",
         "content": "使用 include_router 注册子路由",
@@ -41,10 +77,150 @@ def test_search_memory(client):
     client.patch(f"/memory/{mem_resp.json()['id']}", json={"status": "active"})
 
     resp = client.get("/memory/search?q=include_router")
+    assert resp.status_code in (404, 405)
+
+
+def test_post_search_returns_active_memories_without_mutating_score(client, db):
+    """验证 POST /memory/search 只返回结果并记录曝光，不会直接改写积分字段。
+
+    参数:
+        client: FastAPI 测试客户端，用于构造会话、记忆与搜索请求。
+        db: 测试数据库会话，用于准备长期记忆状态。
+
+    返回值:
+        无返回值；通过断言排序与 score 字段保持不变验证搜索语义。
+    """
+    from server.models import Memory as MemoryModel
+
+    session = client.post("/agents", json={"id": "sess-search-score", "cwd": "/tmp/search-score"}).json()
+    long_mem = client.post("/memory", json={
+        "project_id": session["project_id"],
+        "title": "长期规则",
+        "content": "数据库连接池必须开启 pool_pre_ping",
+    }).json()
+    short_mem = client.post("/memory", json={
+        "project_id": session["project_id"],
+        "title": "短期规则",
+        "content": "数据库 timeout 需要调大",
+    }).json()
+    client.patch(f"/memory/{long_mem['id']}", json={"status": "active"})
+    client.patch(f"/memory/{short_mem['id']}", json={"status": "active"})
+
+    long_row = db.get(MemoryModel, long_mem["id"])
+    long_row.tier = "long"
+    db.commit()
+
+    resp = client.post("/memory/search", json={
+        "query": "数据库",
+        "session_id": "sess-search-score",
+        "limit": 3,
+    })
+
     assert resp.status_code == 200
     results = resp.json()
-    assert len(results) >= 1
-    assert all(r["status"] == "active" for r in results)
+    assert [item["id"] for item in results] == [long_mem["id"], short_mem["id"]]
+    assert [item["tier"] for item in results] == ["long", "short"]
+    assert all(item["score_total"] == 0 for item in results)
+    assert all(item["feedback_count"] == 0 for item in results)
+
+
+def test_feedback_promotes_short_memory_to_review_at_positive_threshold(client, monkeypatch):
+    """验证正向反馈累计达到阈值后，短期记忆会进入 review。"""
+    monkeypatch.setattr("server.routers.memory._REVIEW_SCORE_THRESHOLD", 3, raising=False)
+    session = client.post("/agents", json={"id": "sess-feedback-up", "cwd": "/tmp/feedback-up"}).json()
+    memory = client.post("/memory", json={
+        "project_id": session["project_id"],
+        "title": "DDL 规则",
+        "content": "MySQL 5.7 不支持该 DDL",
+    }).json()
+    client.patch(f"/memory/{memory['id']}", json={"status": "active"})
+
+    search_resp = client.post("/memory/search", json={
+        "query": "DDL",
+        "session_id": "sess-feedback-up",
+        "limit": 3,
+    })
+    assert search_resp.status_code == 200
+
+    first = client.post(f"/memory/{memory['id']}/feedback", json={
+        "session_id": "sess-feedback-up",
+        "score": 2,
+        "reason": "第一次确认了兼容性边界",
+    })
+    assert first.status_code == 200
+    assert first.json()["status"] == "active"
+    assert first.json()["score_total"] == 2
+
+    second = client.post(f"/memory/{memory['id']}/feedback", json={
+        "session_id": "sess-feedback-up",
+        "score": 1,
+        "reason": "再次帮助排除了错误方案",
+    })
+
+    assert second.status_code == 200
+    assert second.json()["status"] == "review"
+    assert second.json()["tier"] == "short"
+    assert second.json()["review_reason"] == "score_threshold"
+    assert second.json()["review_score"] == 3
+    assert second.json()["score_total"] == 3
+    assert second.json()["feedback_count"] == 2
+
+
+def test_feedback_deletes_short_memory_at_negative_threshold(client, monkeypatch):
+    """验证负向反馈累计达到阈值后，短期记忆会被直接删除。"""
+    monkeypatch.setattr("server.routers.memory._DELETE_SCORE_THRESHOLD", -3, raising=False)
+    session = client.post("/agents", json={"id": "sess-feedback-down", "cwd": "/tmp/feedback-down"}).json()
+    memory = client.post("/memory", json={
+        "project_id": session["project_id"],
+        "title": "无效经验",
+        "content": "这个结论后续被证明不成立",
+    }).json()
+    client.patch(f"/memory/{memory['id']}", json={"status": "active"})
+
+    search_resp = client.post("/memory/search", json={
+        "query": "结论",
+        "session_id": "sess-feedback-down",
+        "limit": 3,
+    })
+    assert search_resp.status_code == 200
+
+    first = client.post(f"/memory/{memory['id']}/feedback", json={
+        "session_id": "sess-feedback-down",
+        "score": -2,
+        "reason": "误导了定位",
+    })
+    assert first.status_code == 200
+    assert first.json()["score_total"] == -2
+
+    second = client.post(f"/memory/{memory['id']}/feedback", json={
+        "session_id": "sess-feedback-down",
+        "score": -1,
+        "reason": "再次验证无用",
+    })
+
+    assert second.status_code == 200
+    assert second.json()["id"] == memory["id"]
+    listed = client.get("/memory?status=active").json()
+    assert all(item["id"] != memory["id"] for item in listed)
+
+
+def test_feedback_rejects_memory_not_exposed_to_session(client):
+    """验证未被当前会话搜索曝光过的记忆不能直接提交反馈。"""
+    session = client.post("/agents", json={"id": "sess-feedback-guard", "cwd": "/tmp/feedback-guard"}).json()
+    memory = client.post("/memory", json={
+        "project_id": session["project_id"],
+        "title": "规则",
+        "content": "只有搜索过的记忆才能反馈",
+    }).json()
+    client.patch(f"/memory/{memory['id']}", json={"status": "active"})
+
+    resp = client.post(f"/memory/{memory['id']}/feedback", json={
+        "session_id": "sess-feedback-guard",
+        "score": 1,
+        "reason": "不应该允许凭空评分",
+    })
+
+    assert resp.status_code == 400
 
 
 def test_list_memories_filters_by_status(client):
@@ -86,25 +262,6 @@ def test_memory_has_tier_and_updated_at(client):
     assert data["updated_at"] > 0
 
 
-def test_search_prefers_long(client):
-    """长期记忆应排在短期记忆前面返回。"""
-    short_resp = client.post("/memory", json={"title": "short knowledge", "content": "pytest short"})
-    long_resp = client.post("/memory", json={"title": "long knowledge", "content": "pytest long"})
-    client.patch(f"/memory/{short_resp.json()['id']}", json={"status": "active"})
-    client.patch(f"/memory/{long_resp.json()['id']}", json={"status": "active"})
-    client.patch(f"/memory/{long_resp.json()['id']}", json={"tier": "long"})
-
-    resp = client.get("/memory/search?q=pytest")
-    results = resp.json()
-    assert len(results) >= 1
-    long_ids = [r["id"] for r in results if r["tier"] == "long"]
-    short_ids = [r["id"] for r in results if r["tier"] == "short"]
-    if long_ids and short_ids:
-        long_pos = next(i for i, r in enumerate(results) if r["tier"] == "long")
-        short_pos = next(i for i, r in enumerate(results) if r["tier"] == "short")
-        assert long_pos < short_pos
-
-
 def test_patch_rejects_manual_review_transition(client):
     """验证接口不支持手动将记忆直接改成 review。"""
     resp = client.post("/memory", json={"title": "t", "content": "c"})
@@ -124,28 +281,6 @@ def test_patch_rejects_conflicting_status_and_tier_update(client):
     assert conflict.status_code == 400
 
 
-def test_patch_rejects_downgrade_to_short(client, monkeypatch):
-    """验证接口不支持把 review 记忆手动降级回 short。"""
-    session_resp = client.post("/agents", json={
-        "id": "sess-memory-no-downgrade",
-        "cwd": "/tmp/memory-no-downgrade",
-    })
-    project_id = session_resp.json()["project_id"]
-    resp = client.post("/memory", json={
-        "project_id": project_id,
-        "title": "t",
-        "content": "这个规则必须先进入 review",
-    })
-    mid = resp.json()["id"]
-    client.patch(f"/memory/{mid}", json={"status": "active"})
-    monkeypatch.setattr("server.routers.memory._REVIEW_HIT_THRESHOLD", 1)
-    client.get("/memory/search?q=必须&session_id=sess-memory-no-downgrade")
-
-    r = client.patch(f"/memory/{mid}", json={"tier": "short"})
-    assert r.status_code == 400
-
-
-
 def test_patch_to_review_rejects_pending(client):
     """验证 pending 状态的记忆也不能被手动标记为 review。"""
     resp = client.post("/memory", json={"title": "t", "content": "c"})
@@ -154,190 +289,43 @@ def test_patch_to_review_rejects_pending(client):
     assert r.status_code == 400
 
 
-def test_list_memories_filters_by_tier(client, monkeypatch):
-    """验证 GET /memory?tier=... 能按 tier 筛选返回记忆。"""
+def test_list_memories_filters_by_tier(client):
+    """验证 GET /memory?tier=... 能按 tier 筛选返回记忆。
+
+    参数:
+        client: FastAPI 测试客户端，用于创建短期与长期记忆。
+
+    返回值:
+        无返回值；断言短期与长期列表过滤结果正确。
+    """
     short_resp = client.post("/memory", json={"title": "s", "content": "c"})
-    session_resp = client.post("/agents", json={
-        "id": "sess-memory-tier-filter",
-        "cwd": "/tmp/memory-tier-filter",
-    })
-    project_id = session_resp.json()["project_id"]
-    long_resp = client.post("/memory", json={
-        "project_id": project_id,
-        "title": "l",
-        "content": "这个规则只能通过 review 晋升为长期",
-    })
+    long_resp = client.post("/memory", json={"title": "l", "content": "长期记忆"})
     long_id = long_resp.json()["id"]
+    client.patch(f"/memory/{short_resp.json()['id']}", json={"status": "active"})
     client.patch(f"/memory/{long_id}", json={"status": "active"})
-    monkeypatch.setattr("server.routers.memory._REVIEW_HIT_THRESHOLD", 1)
-    client.get("/memory/search?q=只能&session_id=sess-memory-tier-filter")
-    client.patch(f"/memory/{long_id}", json={"tier": "long"})
+
+    promote_resp = client.patch(f"/memory/{long_id}", json={"tier": "long"})
+    assert promote_resp.status_code == 422
 
     short_list = client.get("/memory?tier=short")
     long_list = client.get("/memory?tier=long")
     assert any(r["id"] == short_resp.json()["id"] for r in short_list.json())
     assert all(r["tier"] == "short" for r in short_list.json())
-    assert any(r["id"] == long_id for r in long_list.json())
-    assert all(r["tier"] == "long" for r in long_list.json())
+    assert all(r["id"] != long_id for r in long_list.json())
 
 
-def test_search_memory_prefers_session_project_over_project_id(client):
-    """验证搜索接口优先按 session_id 解析项目范围，而不是调用方传入的 project_id。"""
-    session_a = client.post("/agents", json={
-        "id": "sess-memory-a",
-        "cwd": "/tmp/memory-project-a",
-    })
-    session_b = client.post("/agents", json={
-        "id": "sess-memory-b",
-        "cwd": "/tmp/memory-project-b",
-    })
-    project_a = session_a.json()["project_id"]
-    project_b = session_b.json()["project_id"]
+def test_delete_memory_removes_pending_item(client):
+    """验证 DELETE /memory/{id} 仍可删除 pending 记忆。
 
-    mem_a = client.post("/memory", json={
-        "project_id": project_a,
-        "title": "A 约束",
-        "content": "当前项目必须使用 alpha token",
-    }).json()
-    mem_b = client.post("/memory", json={
-        "project_id": project_b,
-        "title": "B 约束",
-        "content": "当前项目必须使用 beta token",
-    }).json()
+    参数:
+        client: FastAPI 测试客户端，用于创建并删除待处理记忆。
 
-    client.patch(f"/memory/{mem_a['id']}", json={"status": "active"})
-    client.patch(f"/memory/{mem_b['id']}", json={"status": "active"})
-
-    resp = client.get(f"/memory/search?q=必须&session_id=sess-memory-a&project_id={project_b}")
-
-    assert resp.status_code == 200
-    results = resp.json()
-    ids = [item["id"] for item in results]
-    assert mem_a["id"] in ids
-    assert mem_b["id"] not in ids
-
-
-def test_short_active_memory_hit_count_enters_review_after_threshold(client, monkeypatch):
-    """验证 active+short 记忆在 7 天窗口内累计命中后会进入 review。"""
-    session_resp = client.post("/agents", json={
-        "id": "sess-memory-hit",
-        "cwd": "/tmp/memory-project-hit",
-    })
-    project_id = session_resp.json()["project_id"]
-    memory = client.post("/memory", json={
-        "project_id": project_id,
-        "title": "接口约束",
-        "content": "这个接口必须携带 access token",
-    }).json()
-    client.patch(f"/memory/{memory['id']}", json={"status": "active"})
-
-    monkeypatch.setattr("server.routers.memory._REVIEW_HIT_THRESHOLD", 2)
-
-    first = client.get("/memory/search?q=必须&session_id=sess-memory-hit")
-    second = client.get("/memory/search?q=必须&session_id=sess-memory-hit")
-    review_list = client.get("/memory?status=review")
-
-    assert first.status_code == 200
-    assert second.status_code == 200
-    assert review_list.status_code == 200
-    first_item = first.json()[0]
-    assert first_item["hit_count_7d"] == 1
-    assert first_item["status"] == "active"
-    assert second.json() == []
-    review_item = next(item for item in review_list.json() if item["id"] == memory["id"])
-    assert review_item["hit_count_7d"] == 2
-    assert review_item["status"] == "review"
-    assert review_item["tier"] == "short"
-    assert review_item["review_reason"] == "hit_threshold"
-    assert review_item["review_hit_count"] == 2
-
-
-def test_short_active_memory_hit_window_resets_after_7_days(client, monkeypatch, db):
-    """验证超过 7 天未命中后，短期记忆的窗口计数会重新从 1 开始。"""
-    session_resp = client.post("/agents", json={
-        "id": "sess-memory-reset",
-        "cwd": "/tmp/memory-project-reset",
-    })
-    project_id = session_resp.json()["project_id"]
-    memory = client.post("/memory", json={
-        "project_id": project_id,
-        "title": "跨项目边界",
-        "content": "这个命令不能跨项目执行",
-    }).json()
-    client.patch(f"/memory/{memory['id']}", json={"status": "active"})
-
-    from server.models import Memory as MemoryModel
-
-    row = db.get(MemoryModel, memory["id"])
-    row.hit_count_7d = 5
-    row.last_hit_at = 1000.0
-    db.commit()
-
-    monkeypatch.setattr("server.routers.memory.time.time", lambda: 1000.0 + 8 * 86400)
-    resp = client.get("/memory/search?q=不能&session_id=sess-memory-reset")
-
-    assert resp.status_code == 200
-    item = resp.json()[0]
-    assert item["hit_count_7d"] == 1
-    assert item["status"] == "active"
-
-
-def test_patch_promotes_review_short_to_active_long(client, monkeypatch):
-    """验证只有 review+short 记忆能通过 PATCH 晋升为 active+long。"""
-    session_resp = client.post("/agents", json={
-        "id": "sess-memory-promote",
-        "cwd": "/tmp/memory-project-promote",
-    })
-    project_id = session_resp.json()["project_id"]
-    memory = client.post("/memory", json={
-        "project_id": project_id,
-        "title": "插件边界",
-        "content": "插件只能在主项目中加载",
-    }).json()
-    client.patch(f"/memory/{memory['id']}", json={"status": "active"})
-
-    monkeypatch.setattr("server.routers.memory._REVIEW_HIT_THRESHOLD", 1)
-    search_resp = client.get("/memory/search?q=只能&session_id=sess-memory-promote")
-    assert search_resp.status_code == 200
-    assert search_resp.json() == []
-
-    review_list = client.get("/memory?status=review")
-    assert review_list.status_code == 200
-    assert any(item["id"] == memory["id"] for item in review_list.json())
-
-    promote_resp = client.patch(f"/memory/{memory['id']}", json={"tier": "long"})
-
-    assert promote_resp.status_code == 200
-    data = promote_resp.json()
-    assert data["status"] == "active"
-    assert data["tier"] == "long"
-
-
-def test_delete_memory_removes_pending_or_review_item(client, monkeypatch):
-    """验证 DELETE /memory/{id} 可以删除 pending 和记入 review 队列的记忆。"""
+    返回值:
+        无返回值；断言删除后 pending 列表中不再包含目标记忆。
+    """
     pending = client.post("/memory", json={"title": "待删除 pending", "content": "不要保留这条 pending 记忆"}).json()
     pending_delete = client.delete(f"/memory/{pending['id']}")
     pending_list = client.get("/memory?status=pending")
 
     assert pending_delete.status_code == 204
     assert all(item["id"] != pending["id"] for item in pending_list.json())
-
-    session_resp = client.post("/agents", json={
-        "id": "sess-memory-delete-review",
-        "cwd": "/tmp/memory-project-delete-review",
-    })
-    project_id = session_resp.json()["project_id"]
-    review_memory = client.post("/memory", json={
-        "project_id": project_id,
-        "title": "待删除 review",
-        "content": "这个规则必须被确认后才能保留",
-    }).json()
-    client.patch(f"/memory/{review_memory['id']}", json={"status": "active"})
-    monkeypatch.setattr("server.routers.memory._REVIEW_HIT_THRESHOLD", 1)
-    client.get("/memory/search?q=必须&session_id=sess-memory-delete-review")
-
-    review_delete = client.delete(f"/memory/{review_memory['id']}")
-    review_list = client.get("/memory?status=review")
-
-    assert review_delete.status_code == 204
-    assert all(item["id"] != review_memory["id"] for item in review_list.json())

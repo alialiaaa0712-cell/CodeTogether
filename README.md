@@ -20,14 +20,15 @@ python3 codetogether.py init
 
 `init` 命令会：
 1. 将 Hooks 注册到 `~/.claude/settings.json`
-2. 在本地 `7879` 端口启动服务
+2. 将记忆 MCP Server 注册到 `~/.claude.json`
+3. 在本地 `7879` 端口启动服务
 
 手机浏览器访问 `http://<电脑IP>:7879/mobile/`
 
 ## 命令
 
 ```bash
-python3 codetogether.py init              # 注册 Hooks + 启动服务（推荐首次使用）
+python3 codetogether.py init              # 注册 Hooks + 记忆 MCP + 启动服务（推荐首次使用）
 python3 codetogether.py start             # 仅启动服务
 python3 codetogether.py install-service   # 安装 launchd 服务（macOS 开机自启）
 python3 codetogether.py uninstall-service # 卸载 launchd 服务
@@ -57,21 +58,33 @@ MySQL 示例：
 DATABASE_URL=mysql+pymysql://user:password@localhost:3306/codetogether
 ```
 
+## 记忆工具
+
+CodeTogether 会向 Claude 注册两个 MCP 工具：
+
+- `memory_search(query, limit=3, session_id=None)`：按当前会话所属项目搜索记忆
+- `memory_feedback(memory_id, score, reason, session_id=None)`：对已曝光记忆提交 `-2/-1/0/+1/+2` 反馈
+
+默认情况下不需要模型自己传 `session_id`；MCP 会优先读取当前 Claude 会话环境，并在调用前自动确保服务端存在对应 session。
+
 ## 架构
 
 ```
 Claude Code (本地)
-  └─ Hooks (pre_tool.py / post_tool.py / stop.py)
+  ├─ Hooks (pre_tool.py / post_tool.py / stop.py)
+  │    └─ HTTP → CodeTogether Server (FastAPI)
+  └─ MCP (codetogether-memory)
        └─ HTTP → CodeTogether Server (FastAPI)
-                   ├─ SQLite / MySQL
-                   ├─ WebSocket 推送
-                   └─ /mobile/ 静态页面
-                         └─ 手机浏览器
+                    ├─ SQLite / MySQL
+                    ├─ WebSocket 推送
+                    └─ /mobile/ 静态页面
+                          └─ 手机浏览器
 ```
 
-- **Hooks**：注册在 `~/.claude/settings.json`，每次工具调用/会话结束时自动触发
+- **Hooks**：注册在 `~/.claude/settings.json`，负责工具事件同步、消息注入、停止唤醒与 transcript 同步
+- **MCP**：注册在 `~/.claude.json`，向 Claude 暴露 `memory_search` / `memory_feedback` 两个记忆工具
 - **stop.py**：会话结束时同步 assistant 消息到数据库；若有待处理手机消息则返回 `continue: true` 自动唤醒
-- **pre_tool.py**：工具调用前拉取手机消息注入上下文，并查询相关记忆
+- **pre_tool.py**：工具调用前拉取手机消息注入上下文，不自动查询记忆
 - **Server**：FastAPI，默认 SQLite 零配置，支持 MySQL
 
 ## 开发

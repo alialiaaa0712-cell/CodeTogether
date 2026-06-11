@@ -106,6 +106,37 @@ def test_create_session_does_not_merge_projects_with_same_basename_under_differe
     assert second_project.repo_url == "/tmp/b/CodeTogether"
 
 
+def test_trigger_extraction_saves_pending_short_memories_with_score_defaults(db):
+    """验证提炼出的候选记忆默认保持 pending/short 与积分零值。"""
+    session = Session(id="sess-extract-score", project_id="proj-1")
+    db.add(session)
+    db.add(Message(session_id="sess-extract-score", role="assistant", content="MySQL 5.7 不能使用该 DDL", status="delivered"))
+    db.commit()
+
+    returned_items = [
+        {"project_id": "proj-1", "title": "DDL 约束", "content": "MySQL 5.7 不能使用该 DDL", "tags": "mysql"},
+    ]
+
+    class ImmediateThread:
+        def __init__(self, target=None, daemon=None):
+            self._target = target
+
+        def start(self):
+            if self._target:
+                self._target()
+
+    with mock.patch("server.routers.agents.extract_memories", return_value=returned_items), \
+         mock.patch("server.routers.agents.SessionLocal", return_value=db), \
+         mock.patch("server.routers.agents.threading.Thread", ImmediateThread):
+        _trigger_extraction("sess-extract-score", "proj-1")
+
+    saved = db.query(Memory).filter(Memory.source_session_id == "sess-extract-score").one()
+    assert saved.status == "pending"
+    assert saved.tier == "short"
+    assert saved.score_total == 0
+    assert saved.feedback_count == 0
+
+
 def test_trigger_extraction_prefers_messages_and_limits_saved_memories(db):
     """验证提炼入口优先使用聊天消息摘要，并且最多落 3 条记忆。"""
     session = Session(id="sess-extract", project_id="proj-1")

@@ -100,6 +100,18 @@ class MemoryCreate(BaseModel):
     source_session_id: Optional[str] = None
 
 
+class MemorySearchRequest(BaseModel):
+    query: str
+    session_id: str
+    limit: int = 3
+
+
+class MemoryFeedbackRequest(BaseModel):
+    session_id: str
+    score: Literal[-2, -1, 0, 1, 2]
+    reason: str
+
+
 class MemoryOut(BaseModel):
     id: str
     project_id: Optional[str] = None
@@ -112,10 +124,11 @@ class MemoryOut(BaseModel):
     created_at: float
     activated_at: Optional[float] = None
     updated_at: float
-    hit_count_7d: int
-    last_hit_at: Optional[float] = None
+    score_total: int
+    feedback_count: int
+    last_feedback_at: Optional[float] = None
+    review_score: Optional[int] = None
     review_reason: Optional[str] = None
-    review_hit_count: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 

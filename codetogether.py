@@ -7,7 +7,9 @@ import sys
 from pathlib import Path
 
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
+CLAUDE_CONFIG_PATH = Path.home() / ".claude.json"
 HOOKS_DIR = Path(__file__).resolve().parent / "hooks"
+MCP_SERVER_PATH = Path(__file__).resolve().parent / "mcp_server" / "server.py"
 SERVER_MODULE = "server.main:app"
 DEFAULT_PORT = 7879
 
@@ -21,13 +23,70 @@ def _load_settings() -> dict:
     return {}
 
 
+
 def _save_settings(data: dict) -> None:
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     SETTINGS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
 
+
+def _load_claude_config() -> dict:
+    """
+    读取 Claude 用户级配置文件，供 MCP server 注册使用。
+
+    参数:
+        无。
+
+    返回值:
+        已解析的配置字典；若文件不存在或损坏则返回空字典。
+    """
+    if CLAUDE_CONFIG_PATH.exists():
+        try:
+            return json.loads(CLAUDE_CONFIG_PATH.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+
+def _save_claude_config(data: dict) -> None:
+    """
+    写回 Claude 用户级配置文件，保留其他顶层字段。
+
+    参数:
+        data: 要持久化的 Claude 配置字典。
+
+    返回值:
+        无。
+    """
+    CLAUDE_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CLAUDE_CONFIG_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+
+
 def _hook_command(script: str) -> str:
     return f"python3 {HOOKS_DIR / script}"
+
+
+
+def _mcp_server_config() -> dict:
+    """
+    生成 CodeTogether 记忆 MCP server 的 Claude 配置片段。
+
+    参数:
+        无。
+
+    返回值:
+        可直接写入 `mcpServers.codetogether-memory` 的配置字典。
+    """
+    return {
+        "type": "stdio",
+        "command": sys.executable,
+        "args": [str(MCP_SERVER_PATH)],
+        "env": {
+            "CODETOGETHER_SERVER": f"http://127.0.0.1:{DEFAULT_PORT}",
+        },
+    }
+
 
 
 def _register_hooks() -> None:
@@ -56,12 +115,41 @@ def _register_hooks() -> None:
     _save_settings(data)
 
 
+
+def _register_mcp_server() -> None:
+    """
+    将 CodeTogether 记忆 MCP server 注册到 Claude 用户级配置中。
+
+    参数:
+        无。
+
+    返回值:
+        无。
+    """
+    data = _load_claude_config()
+    mcp_servers = data.setdefault("mcpServers", {})
+    server_name = "codetogether-memory"
+    existing = mcp_servers.get(server_name)
+    desired = _mcp_server_config()
+
+    if existing == desired:
+        print("  MCP: already registered")
+        return
+
+    mcp_servers[server_name] = desired
+    _save_claude_config(data)
+    print("  MCP: registered")
+
+
 def cmd_init(args):
     print("=== CodeTogether Init ===")
-    print(f"\n[1/2] Registering hooks in {SETTINGS_PATH}")
+    print(f"\n[1/3] Registering hooks in {SETTINGS_PATH}")
     _register_hooks()
 
-    print(f"\n[2/2] Starting server on port {DEFAULT_PORT}")
+    print(f"\n[2/3] Registering MCP server in {CLAUDE_CONFIG_PATH}")
+    _register_mcp_server()
+
+    print(f"\n[3/3] Starting server on port {DEFAULT_PORT}")
     print("      Press Ctrl+C to stop.\n")
     try:
         subprocess.run(

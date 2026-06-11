@@ -5,19 +5,15 @@ import time
 
 from sqlalchemy.orm import Session as DBSession
 
-from server.models import Memory as MemoryModel
+from server.models import MemorySearchExposure as MemorySearchExposureModel
 
 logger = logging.getLogger(__name__)
 
-_7_DAYS = 7 * 86400
-_30_DAYS = 30 * 86400
+_EXPOSURE_TTL_SECONDS = 3600
 
 
 def run_memory_housekeeping(db: DBSession) -> None:
-    """
-    执行记忆轻量维护任务：
-    1. 重置超过 7 天未命中的短期记忆窗口统计
-    2. 不再自动晋升长期，也不再自动改为 rejected
+    """执行记忆轻量维护任务，并确保 score 模型下的定时任务安全无副作用。
 
     参数:
         db: 数据库会话。
@@ -25,26 +21,18 @@ def run_memory_housekeeping(db: DBSession) -> None:
     返回值:
         无。
     """
-    now = time.time()
-
-    stale_short = (
-        db.query(MemoryModel)
-        .filter(
-            MemoryModel.status == "active",
-            MemoryModel.tier == "short",
-            MemoryModel.last_hit_at.isnot(None),
-            MemoryModel.last_hit_at < now - _7_DAYS,
-            MemoryModel.hit_count_7d > 0,
-        )
+    cutoff = time.time() - _EXPOSURE_TTL_SECONDS
+    expired_exposures = (
+        db.query(MemorySearchExposureModel)
+        .filter(MemorySearchExposureModel.exposed_at < cutoff)
         .all()
     )
-    for mem in stale_short:
-        mem.hit_count_7d = 0
-        mem.review_reason = None
-        mem.review_hit_count = None
-        mem.updated_at = now
-    if stale_short:
-        logger.info("housekeeping: %d short hit windows reset", len(stale_short))
+
+    for exposure in expired_exposures:
+        db.delete(exposure)
+
+    if expired_exposures:
+        logger.info("housekeeping: deleted %d expired memory search exposures", len(expired_exposures))
 
     try:
         db.commit()
