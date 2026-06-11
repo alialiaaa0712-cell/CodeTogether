@@ -30,6 +30,24 @@ def test_poll_returns_empty_after_consumed(client):
     assert resp.json() == []
 
 
+def test_transcript_synced_user_message_is_not_requeued(client):
+    """带 source_uuid 的 transcript 用户消息应直接视为已投递，不能再次进入待注入队列。"""
+    client.post("/agents", json={"id": "sess-chat-002b"})
+
+    resp = client.post("/chat", json={
+        "session_id": "sess-chat-002b",
+        "content": "这是桌面端原始输入",
+        "role": "user",
+        "source_uuid": "transcript-user-1",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "delivered"
+
+    poll_resp = client.get("/chat/sess-chat-002b/poll")
+    assert poll_resp.status_code == 200
+    assert poll_resp.json() == []
+
+
 def test_message_history_returns_recent_messages_in_desc_order(client):
     """
     验证聊天历史接口会按创建时间倒序返回指定会话最近的消息。

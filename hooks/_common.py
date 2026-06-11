@@ -61,13 +61,14 @@ def poll_messages(session_id: str) -> list:
         return []
 
 
-def search_memory(query: str, project_id: str = None) -> list:
+def search_memory(query: str, project_id: str = None, session_id: str = None) -> list:
     """
-    搜索记忆，服务端负责 long 优先的两段式排序，最多返回 3 条。
+    搜索记忆，优先按 session_id 让服务端解析当前项目，project_id 仅作回退。
 
     参数:
         query: 搜索关键词。
-        project_id: 可选项目 ID 过滤。
+        project_id: 可选项目 ID 回退值。
+        session_id: 可选会话 ID，用于让服务端优先解析项目范围。
 
     返回值:
         最多 3 条匹配的记忆列表，长期记忆优先。
@@ -76,6 +77,8 @@ def search_memory(query: str, project_id: str = None) -> list:
         params = {"q": query}
         if project_id:
             params["project_id"] = project_id
+        if session_id:
+            params["session_id"] = session_id
         url = f"{SERVER}/memory/search?" + urllib.parse.urlencode(params)
         req = urllib.request.Request(url, method="GET")
         resp = urllib.request.urlopen(req, timeout=TIMEOUT)

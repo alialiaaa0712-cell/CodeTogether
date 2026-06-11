@@ -10,11 +10,11 @@
 </head>
 <body>
   <header class="topbar">
+    <button id="back-btn" class="back-btn" type="button" style="display:none">←</button>
     <div id="topbar-main">
-      <h1>CodeTogether</h1>
+      <span class="topbar-title">CodeTogether</span>
       <span id="conn-status" class="conn-status disconnected">未连接</span>
     </div>
-    <button id="back-btn" class="back-btn" type="button" style="display:none">← 返回</button>
   </header>
 
   <main class="page-shell">
@@ -36,8 +36,13 @@
     <!-- 记忆页 -->
     <section id="view-memory" class="view">
       <div class="card">
-        <div class="memory-toolbar">
-          <button id="memory-filter-pending" class="pill active" type="button">待审核</button>
+        <div class="memory-scope-switch">
+          <button id="memory-scope-current" class="pill active" type="button">当前项目</button>
+          <button id="memory-scope-all" class="pill" type="button">全部项目</button>
+        </div>
+        <div class="memory-toolbar memory-filter-row">
+          <button id="memory-filter-pending" class="pill active" type="button">待启用</button>
+          <button id="memory-filter-review" class="pill" type="button">待晋升</button>
           <button id="memory-filter-active" class="pill" type="button">已启用</button>
         </div>
         <div id="memory-list" class="memory-list"></div>

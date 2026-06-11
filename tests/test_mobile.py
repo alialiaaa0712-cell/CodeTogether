@@ -275,6 +275,44 @@ def test_mobile_websocket_still_broadcasts_event_messages_for_existing_session(c
         assert message["data"]["tool_name"] == "Read"
 
 
+def test_mobile_websocket_broadcasts_parent_update_when_existing_child_gets_parent_from_event(client):
+    """
+    验证已存在子会话在事件上报时补写 parent_id 后，会再广播一次 agent_update 让前端及时隐藏它。
+
+    参数:
+        client: FastAPI 测试客户端，用于建立 WebSocket 连接并模拟父子会话与事件上报。
+
+    返回值:
+        无返回值；断言先收到 parent_id 已补齐的 agent_update，再收到对应 event。
+    """
+    parent_id = f"parent-{uuid.uuid4()}"
+    child_id = f"child-{uuid.uuid4()}"
+    assert client.post("/agents", json={"id": parent_id}).status_code == 200
+    assert client.post("/agents", json={"id": child_id}).status_code == 200
+
+    with client.websocket_connect("/ws") as websocket:
+        resp = client.post(
+            "/events",
+            json={
+                "session_id": child_id,
+                "parent_session_id": parent_id,
+                "type": "pre_tool",
+                "tool_name": "Bash",
+                "input": {"command": "ls"},
+            },
+        )
+        assert resp.status_code == 200
+
+        session_message = _receive_ws_message(websocket)
+        assert session_message["type"] == "agent_update"
+        assert session_message["data"]["id"] == child_id
+        assert session_message["data"]["parent_id"] == parent_id
+
+        event_message = _receive_ws_message(websocket)
+        assert event_message["type"] == "event"
+        assert event_message["data"]["session_id"] == child_id
+
+
 def test_mobile_chat_script_contains_chat_endpoints(client):
     """
     验证移动端脚本已接入聊天历史与发送消息能力。
@@ -313,6 +351,38 @@ def test_mobile_memory_script_contains_review_actions(client):
     assert 'method: "PATCH"' in js
     assert '记忆已启用' in js
     assert '记忆已拒绝' in js
+
+
+def test_mobile_memory_html_contains_scope_toggle(client):
+    """验证记忆页包含当前项目/全部项目切换与 review 分区入口。"""
+    html = client.get("/mobile/index.html").text
+    assert 'id="memory-scope-current"' in html
+    assert 'id="memory-scope-all"' in html
+    assert 'id="memory-filter-review"' in html
+
+
+
+def test_mobile_memory_script_defaults_to_current_project_scope(client):
+    """验证记忆页脚本默认按当前项目范围加载，并支持 project_id 过滤。"""
+    js = client.get("/mobile/app.js").text
+    assert 'memoryScope: "current"' in js
+    assert "function getCurrentMemoryProjectId()" in js
+    assert 'url += `&project_id=${encodeURIComponent(projectId)}`' in js
+
+
+
+def test_mobile_memory_script_uses_delete_for_reject(client):
+    """验证记忆页对删除/拒绝动作使用 DELETE 接口。"""
+    js = client.get("/mobile/app.js").text
+    assert "async function deleteMemory(memoryId)" in js
+    assert 'fetchJson(`${SERVER}/memory/${memoryId}`, { method: "DELETE" })' in js
+    assert "async function promoteMemory(memoryId)" in js
+
+
+def test_mobile_memory_script_always_shows_hit_count(client):
+    """验证记忆页会始终显示 7 天命中次数，包括 0 次。"""
+    js = client.get("/mobile/app.js").text
+    assert '7天命中 ${escapeHtml(memory.hit_count_7d ?? 0)} 次' in js
 
 
 def test_readme_mentions_mobile_entry():

@@ -102,6 +102,20 @@ def test_search_memory_empty_on_error():
     assert result == []
 
 
+def test_search_memory_includes_session_id_and_project_fallback():
+    """验证 search_memory 会同时携带 session_id 与 project_id 回退参数。"""
+    m = import_common()
+    with mock.patch("urllib.request.urlopen") as mock_open:
+        response = mock.MagicMock()
+        response.read.return_value = json.dumps([]).encode()
+        mock_open.return_value = response
+        m.search_memory("pytest", project_id="proj-1", session_id="sess-1")
+
+    req = mock_open.call_args[0][0]
+    assert "session_id=sess-1" in req.full_url
+    assert "project_id=proj-1" in req.full_url
+
+
 # --- mark_stopped ---
 
 def test_mark_stopped_calls_patch(monkeypatch):
@@ -202,6 +216,23 @@ def test_post_tool_agent_tool_serializes_response():
     assert '"result"' in payload["output"]
 
 
+def test_post_tool_syncs_transcript_before_posting_event():
+    m = import_post_tool()
+    with mock.patch("hooks.post_tool.sync_messages") as mock_sync, \
+         mock.patch("hooks._common.post_event") as mock_post, \
+         mock.patch("sys.stdin") as mock_stdin:
+        mock_stdin.read.return_value = json.dumps({
+            "session_id": "s1",
+            "tool_name": "Bash",
+            "tool_response": {"stdout": "ok", "stderr": "", "interrupted": False},
+            "cwd": "/project",
+        })
+        m.main()
+    mock_sync.assert_called_once_with("s1", "/project")
+    mock_post.assert_called_once()
+
+
+
 def test_post_tool_invalid_json_no_crash():
     m = import_post_tool()
     with mock.patch("hooks._common.post_event") as mock_post:
@@ -219,6 +250,118 @@ def import_stop():
     import hooks.stop as m
     importlib.reload(m)
     return m
+
+
+def write_transcript(tmp_path, records):
+    """将测试记录写入临时 transcript 文件，返回文件路径。"""
+    path = tmp_path / "session.jsonl"
+    with path.open("w", encoding="utf-8") as f:
+        for record in records:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return path
+
+
+def test_extract_messages_keeps_intermediate_assistant_updates(tmp_path):
+    m = import_stop()
+    path = write_transcript(tmp_path, [
+        {
+            "type": "user",
+            "uuid": "u1",
+            "timestamp": "2026-06-10T10:00:00Z",
+            "message": {"role": "user", "content": [{"type": "text", "text": "问题"}]},
+        },
+        {
+            "type": "assistant",
+            "uuid": "a1",
+            "parentUuid": "u1",
+            "timestamp": "2026-06-10T10:00:01Z",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "我先看看代码。"}]},
+        },
+        {
+            "type": "assistant",
+            "uuid": "a2",
+            "parentUuid": "a1",
+            "timestamp": "2026-06-10T10:00:02Z",
+            "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "x.py"}}]},
+        },
+        {
+            "type": "user",
+            "uuid": "u2",
+            "parentUuid": "a2",
+            "timestamp": "2026-06-10T10:00:03Z",
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "tool-1", "content": "ok"}]},
+        },
+        {
+            "type": "assistant",
+            "uuid": "a3",
+            "parentUuid": "u2",
+            "timestamp": "2026-06-10T10:00:04Z",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "最终回答"}]},
+        },
+    ])
+
+    messages, _ = m._extract_messages(str(path))
+
+    assert [(msg["role"], msg["text"]) for msg in messages] == [
+        ("user", "问题"),
+        ("assistant", "我先看看代码。"),
+        ("assistant", "最终回答"),
+    ]
+
+
+def test_extract_messages_keeps_terminal_assistant_text(tmp_path):
+    m = import_stop()
+    path = write_transcript(tmp_path, [
+        {
+            "type": "user",
+            "uuid": "u1",
+            "timestamp": "2026-06-10T10:00:00Z",
+            "message": {"role": "user", "content": [{"type": "text", "text": "问题"}]},
+        },
+        {
+            "type": "assistant",
+            "uuid": "a1",
+            "parentUuid": "u1",
+            "timestamp": "2026-06-10T10:00:01Z",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "最终回答"}]},
+        },
+        {
+            "type": "attachment",
+            "uuid": "att1",
+            "parentUuid": "a1",
+            "timestamp": "2026-06-10T10:00:02Z",
+        },
+    ])
+
+    messages, _ = m._extract_messages(str(path))
+
+    assert [(msg["role"], msg["text"]) for msg in messages] == [
+        ("user", "问题"),
+        ("assistant", "最终回答"),
+    ]
+
+
+def test_extract_messages_filters_no_response_requested_assistant(tmp_path):
+    m = import_stop()
+    path = write_transcript(tmp_path, [
+        {
+            "type": "user",
+            "uuid": "u1",
+            "timestamp": "2026-06-10T10:00:00Z",
+            "message": {"role": "user", "content": [{"type": "text", "text": "Continue from where you left off."}]},
+        },
+        {
+            "type": "assistant",
+            "uuid": "a1",
+            "parentUuid": "u1",
+            "timestamp": "2026-06-10T10:00:01Z",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "No response requested."}]},
+        },
+    ])
+
+    messages, _ = m._extract_messages(str(path))
+
+    assert messages == []
 
 
 def test_stop_posts_event_and_marks_stopped():

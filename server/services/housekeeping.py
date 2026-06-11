@@ -15,9 +15,9 @@ _30_DAYS = 30 * 86400
 
 def run_memory_housekeeping(db: DBSession) -> None:
     """
-    执行记忆生命周期清理任务：
-    1. active/short 且 updated_at 超过 7 天 → 升级为 long
-    2. review 且 updated_at 超过 30 天 → 标记为 rejected
+    执行记忆轻量维护任务：
+    1. 重置超过 7 天未命中的短期记忆窗口统计
+    2. 不再自动晋升长期，也不再自动改为 rejected
 
     参数:
         db: 数据库会话。
@@ -27,34 +27,24 @@ def run_memory_housekeeping(db: DBSession) -> None:
     """
     now = time.time()
 
-    promoted = (
+    stale_short = (
         db.query(MemoryModel)
         .filter(
             MemoryModel.status == "active",
             MemoryModel.tier == "short",
-            MemoryModel.updated_at < now - _7_DAYS,
+            MemoryModel.last_hit_at.isnot(None),
+            MemoryModel.last_hit_at < now - _7_DAYS,
+            MemoryModel.hit_count_7d > 0,
         )
         .all()
     )
-    for mem in promoted:
-        mem.tier = "long"
+    for mem in stale_short:
+        mem.hit_count_7d = 0
+        mem.review_reason = None
+        mem.review_hit_count = None
         mem.updated_at = now
-    if promoted:
-        logger.info("housekeeping: %d short→long", len(promoted))
-
-    expired = (
-        db.query(MemoryModel)
-        .filter(
-            MemoryModel.status == "review",
-            MemoryModel.updated_at < now - _30_DAYS,
-        )
-        .all()
-    )
-    for mem in expired:
-        mem.status = "rejected"
-        mem.updated_at = now
-    if expired:
-        logger.info("housekeeping: %d review→rejected", len(expired))
+    if stale_short:
+        logger.info("housekeeping: %d short hit windows reset", len(stale_short))
 
     try:
         db.commit()

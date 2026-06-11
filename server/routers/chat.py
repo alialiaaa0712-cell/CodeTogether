@@ -46,8 +46,16 @@ def _wake_session(session_id: str, cwd: str, content: str) -> None:
 
 @router.post("", response_model=MessageOut)
 async def send_message(body: MessageCreate, request: Request, db: DBSession = Depends(get_db)):
-    """手机端发送消息，初始状态为 pending；会话不存在时返回 404。source_uuid 用于去重。
-    若会话已停止，后台唤醒 claude --resume 让其处理消息。消息写入后广播 chat_message 事件。"""
+    """写入手机端或 transcript 同步过来的消息，并按来源决定是否进入待注入队列。
+
+    参数:
+        body: 消息内容、角色、去重用 source_uuid 及可选原始时间戳。
+        request: 当前请求对象，用于广播聊天消息事件。
+        db: 数据库会话。
+
+    返回值:
+        新建或命中的消息对象；transcript 同步消息不会重新进入 pending 队列。
+    """
     session = db.get(SessionModel, body.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")
@@ -55,10 +63,13 @@ async def send_message(body: MessageCreate, request: Request, db: DBSession = De
         existing = db.query(MessageModel).filter(MessageModel.source_uuid == body.source_uuid).first()
         if existing:
             return existing
+    is_transcript_sync = bool(body.source_uuid)
+    initial_status = "delivered" if is_transcript_sync else "pending"
     msg = MessageModel(
         session_id=body.session_id,
         content=body.content,
         role=body.role,
+        status=initial_status,
         source_uuid=body.source_uuid,
         created_at=body.created_at if body.created_at is not None else None,
     )
@@ -75,7 +86,7 @@ async def send_message(body: MessageCreate, request: Request, db: DBSession = De
     except Exception:
         pass
 
-    if session.status == "stopped":
+    if session.status == "stopped" and not is_transcript_sync:
         msg.status = "delivered"
         db.commit()
         _wake_session(body.session_id, session.cwd or "", body.content)

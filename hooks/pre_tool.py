@@ -6,6 +6,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import hooks._common as _common
+from hooks.stop import sync_messages
 
 
 def _project_id_from_cwd(cwd: str) -> "str | None":
@@ -62,11 +63,15 @@ def main():
     tool_name = data.get("tool_name") or ""
 
     _common.ensure_session(agent_session_id, cwd=cwd)
+    # 工具调用前先补同步一次 transcript，避免活跃会话里的上一段对话要等到 Stop 才出现在手机端
+    if agent_session_id:
+        sync_messages(agent_session_id, cwd)
 
     _common.post_event({
         "session_id": agent_session_id,
         "type": "pre_tool",
         "tool_name": tool_name,
+        "tool_use_id": data.get("tool_use_id"),
         "input": data.get("tool_input"),
         "cwd": cwd,
         "parent_session_id": parent_session_id,
@@ -77,7 +82,7 @@ def main():
 
     project_id = _project_id_from_cwd(cwd)
     query = _query_from_input(tool_name, data.get("tool_input") or {})
-    for mem in _common.search_memory(query, project_id=project_id):
+    for mem in _common.search_memory(query, project_id=project_id, session_id=agent_session_id):
         print(f"\n[CodeTogether 记忆]: {mem['title']} — {mem['content']}\n", flush=True)
 
 

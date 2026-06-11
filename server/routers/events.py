@@ -49,6 +49,7 @@ async def receive_event(body: EventCreate, request: Request, db: DBSession = Dep
         创建后的事件对象。
     """
     created_session = None
+    updated_session = None
     if not db.get(SessionModel, body.session_id):
         created_session = SessionModel(
             id=body.session_id,
@@ -60,12 +61,14 @@ async def receive_event(body: EventCreate, request: Request, db: DBSession = Dep
         session = db.get(SessionModel, body.session_id)
         if session and not session.parent_id:
             session.parent_id = body.parent_session_id
+            updated_session = session
 
     input_str = json.dumps(body.input, ensure_ascii=False) if body.input else None
     event = EventModel(
         session_id=body.session_id,
         type=body.type,
         tool_name=body.tool_name,
+        tool_use_id=body.tool_use_id,
         input=input_str,
         output=body.output,
         duration_ms=body.duration_ms,
@@ -75,10 +78,14 @@ async def receive_event(body: EventCreate, request: Request, db: DBSession = Dep
     db.commit()
     if created_session is not None:
         db.refresh(created_session)
+    if updated_session is not None:
+        db.refresh(updated_session)
     db.refresh(event)
 
     if created_session is not None:
         await _broadcast_session_update(request, created_session)
+    elif updated_session is not None:
+        await _broadcast_session_update(request, updated_session)
 
     try:
         manager = request.app.state.ws_manager

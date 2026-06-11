@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 import uuid
 
-from sqlalchemy import BigInteger, Column, Double, Enum, ForeignKey, Index, String, Text
+from sqlalchemy import BigInteger, Column, Double, Enum, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from server.database import Base
@@ -64,6 +64,7 @@ class Event(Base):
     id = Column(String(36), primary_key=True, default=_uuid)
     session_id = Column(String(36), ForeignKey("sessions.id"), nullable=False)
     tool_name = Column(String(128))
+    tool_use_id = Column(String(64), nullable=True)
     type = Column(String(32), nullable=False)
     input = Column(Text)
     output = Column(Text)
@@ -112,6 +113,10 @@ class Memory(Base):
     source_session_id = Column(String(36), ForeignKey("sessions.id"), nullable=True)
     created_at = Column(Double, default=time.time)
     activated_at = Column(Double)
+    hit_count_7d = Column(Integer, nullable=False, default=0)
+    last_hit_at = Column(Double)
+    review_reason = Column(String(255))
+    review_hit_count = Column(Integer)
 
     project = relationship("Project", back_populates="memories")
 

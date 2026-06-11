@@ -11,6 +11,7 @@ const state = {
   chatMessages: [],
   memories: [],
   memoryFilter: "pending",
+  memoryScope: "current",
   tierFilter: "all",
   inChat: false,
   chatPollTimer: null,
@@ -33,7 +34,10 @@ const dom = {
   chatInput: document.getElementById("chat-input"),
   memoryList: document.getElementById("memory-list"),
   memoryFilterPending: document.getElementById("memory-filter-pending"),
+  memoryFilterReview: document.getElementById("memory-filter-review"),
   memoryFilterActive: document.getElementById("memory-filter-active"),
+  memoryScopeCurrent: document.getElementById("memory-scope-current"),
+  memoryScopeAll: document.getElementById("memory-scope-all"),
   toast: document.getElementById("toast"),
 };
 
@@ -228,22 +232,59 @@ function renderChatHistory() {
   dom.chatHistory.innerHTML = state.chatMessages
     .map((item) => {
       if (item._type === "event") {
-        const inputStr = item.input ? JSON.stringify(item.input, null, 2) : "";
-        const outputStr = item.output || "";
-        const durationStr = item.duration_ms ? ` · ${item.duration_ms}ms` : "";
-        const statusIcon = item.done ? "✓" : "▶";
-        const statusClass = item.done ? "post_tool" : "pre_tool";
         const isChild = item.parent_session_id && item.parent_session_id !== state.selectedSessionId;
         const childBadge = isChild ? `<span class="child-agent-badge">子 ${escapeHtml(item.session_id.slice(0, 8))}</span>` : "";
-        return `<div class="tool-call${isChild ? " child-agent" : ""}">
+        const statusClass = item.done ? "post_tool" : "pre_tool";
+        const durationStr = item.duration_ms ? ` · ${item.duration_ms}ms` : "";
+        const tool = item.tool_name || "";
+        const inp = item.input && typeof item.input === "object" ? item.input : {};
+
+        // 按工具类型渲染标题和展开内容
+        let titleExtra = "";
+        let detailBlock = "";
+
+        if (tool === "Read" || tool === "Write") {
+          titleExtra = inp.file_path || "";
+          if (tool === "Write" && item.done) {
+            const out = item.output || "";
+            detailBlock = out ? `<details class="tool-io"><summary>OUT</summary><pre class="tool-detail tool-output">${escapeHtml(out.slice(0, 1000))}</pre></details>` : "";
+          }
+        } else if (tool === "Edit") {
+          titleExtra = inp.file_path || "";
+          // 只展示 old/new，不展示 file_path 重复
+          const editContent = inp.old_string != null ? `- ${String(inp.old_string).split("\n")[0].slice(0, 60)}\n+ ${String(inp.new_string || "").split("\n")[0].slice(0, 60)}` : "";
+          detailBlock = editContent ? `<details class="tool-io"><summary>DIFF</summary><pre class="tool-detail">${escapeHtml(editContent)}</pre></details>` : "";
+        } else if (tool === "Bash") {
+          titleExtra = inp.description || String(inp.command || "").split("\n")[0].slice(0, 60);
+          const cmd = inp.command || "";
+          const out = item.output || "";
+          const inBlock = cmd ? `<details class="tool-io"><summary>IN</summary><pre class="tool-detail">${escapeHtml(cmd.slice(0, 1000))}</pre></details>` : "";
+          const outBlock = out ? `<details class="tool-io"><summary>OUT</summary><pre class="tool-detail tool-output">${escapeHtml(out.slice(0, 2000))}${out.length > 2000 ? "\n…（已截断）" : ""}</pre></details>` : "";
+          detailBlock = inBlock + outBlock;
+        } else if (tool === "Agent") {
+          titleExtra = inp.description || "";
+          const out = item.output || "";
+          detailBlock = out ? `<details class="tool-io"><summary>OUT</summary><pre class="tool-detail tool-output">${escapeHtml(out.slice(0, 1000))}</pre></details>` : "";
+        } else {
+          // 通用：取第一个字符串字段作摘要，IN/OUT 折叠
+          const firstStr = Object.values(inp).find(v => typeof v === "string");
+          if (firstStr) titleExtra = String(firstStr).split("\n")[0].slice(0, 60);
+          const inputStr = Object.keys(inp).length ? JSON.stringify(inp, null, 2) : "";
+          const out = item.output || "";
+          const inBlock = inputStr ? `<details class="tool-io"><summary>IN</summary><pre class="tool-detail">${escapeHtml(inputStr.slice(0, 1000))}</pre></details>` : "";
+          const outBlock = out ? `<details class="tool-io"><summary>OUT</summary><pre class="tool-detail tool-output">${escapeHtml(out.slice(0, 2000))}</pre></details>` : "";
+          detailBlock = inBlock + outBlock;
+        }
+
+        const title = titleExtra ? `${escapeHtml(tool)} ${escapeHtml(titleExtra)}` : escapeHtml(tool);
+
+        return `<div class="tool-call${isChild ? " child-agent" : ""} ${statusClass}">
             <div class="tool-call-summary">
-              <span class="tool-status ${statusClass}">${statusIcon}</span>
               ${childBadge}
-              <span class="tool-name">${escapeHtml(item.tool_name || "")}</span>
+              <span class="tool-title">${title}</span>
               <span class="tool-time">${escapeHtml(formatTime(item.created_at))}${escapeHtml(durationStr)}</span>
             </div>
-            ${inputStr ? `<pre class="tool-detail">${escapeHtml(inputStr)}</pre>` : ""}
-            ${outputStr ? `<pre class="tool-detail tool-output">${escapeHtml(outputStr.slice(0, 2000))}${outputStr.length > 2000 ? "\n…（已截断）" : ""}</pre>` : ""}
+            ${detailBlock}
           </div>`;
       }
       return `<div class="bubble-row ${escapeHtml(item.role)}">
@@ -254,7 +295,11 @@ function renderChatHistory() {
         </div>`;
     })
     .join("");
-  dom.chatHistory.scrollTop = dom.chatHistory.scrollHeight;
+  // 只在已经接近底部时才自动滚动，避免轮询刷新时打断用户阅读
+  const el = dom.chatHistory;
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) {
+    el.scrollTop = el.scrollHeight;
+  }
 }
 
 /**
@@ -283,15 +328,16 @@ function renderMemories() {
     const isReview = memory.status === "review";
     const tierText = memory.tier === "long" ? "长期" : memory.tier === "short" ? "短期" : escapeHtml(memory.tier);
     const tierLabel = `<span class="tier-badge ${escapeHtml(memory.tier)}">${tierText}</span>`;
+    const hitHint = ` · 7天命中 ${escapeHtml(memory.hit_count_7d ?? 0)} 次`;
     const actions = state.memoryFilter === "pending"
       ? `<div class="memory-actions">
           <button type="button" data-action="activate" data-id="${escapeHtml(memory.id)}">启用</button>
-          <button type="button" class="danger" data-action="reject" data-id="${escapeHtml(memory.id)}">拒绝</button>
+          <button type="button" class="danger" data-action="delete" data-id="${escapeHtml(memory.id)}">删除</button>
          </div>`
       : isReview
         ? `<div class="memory-actions">
-            <button type="button" data-action="downgrade" data-id="${escapeHtml(memory.id)}">确认降级</button>
-            <button type="button" class="danger" data-action="reject" data-id="${escapeHtml(memory.id)}">废弃</button>
+            <button type="button" data-action="promote" data-id="${escapeHtml(memory.id)}">升为长期</button>
+            <button type="button" class="danger" data-action="delete" data-id="${escapeHtml(memory.id)}">删除</button>
            </div>`
         : "";
     return `
@@ -300,7 +346,7 @@ function renderMemories() {
           <strong>${escapeHtml(memory.title)}</strong>${tierLabel}
           <span>${escapeHtml(memory.status)}</span>
         </div>
-        <div class="hint">tags: ${escapeHtml(memory.tags || "—")} · ${escapeHtml(formatTime(memory.updated_at || memory.created_at))}</div>
+        <div class="hint">tags: ${escapeHtml(memory.tags || "—")} · ${escapeHtml(formatTime(memory.updated_at || memory.created_at))}${hitHint}</div>
         <div>${escapeHtml(memory.content)}</div>
         ${actions}
       </div>
@@ -319,10 +365,10 @@ function renderMemories() {
       const action = btn.dataset.action;
       if (action === "activate") {
         reviewMemory(btn.dataset.id, "active").catch(() => showToast("操作失败"));
-      } else if (action === "reject") {
-        reviewMemory(btn.dataset.id, "rejected").catch(() => showToast("操作失败"));
-      } else if (action === "downgrade") {
-        downgradeMemory(btn.dataset.id).catch(() => showToast("操作失败"));
+      } else if (action === "promote") {
+        promoteMemory(btn.dataset.id).catch(() => showToast("操作失败"));
+      } else if (action === "delete") {
+        deleteMemory(btn.dataset.id).catch(() => showToast("操作失败"));
       }
     });
   });
@@ -364,20 +410,28 @@ async function loadChatHistory() {
     return;
   }
 
-  // 将 pre/post 配对合并：pre_tool 作为主记录，post_tool 的 output/duration 合并进去
+  // pre/post 配对：优先用 tool_use_id 精确匹配，回退到 tool_name FIFO
   const paired = [];
-  const preQueue = {};
+  const preById = {};   // tool_use_id → pre event
+  const preQueue = {};  // tool_name → pre event[]（无 tool_use_id 时的回退）
   [...events].sort((a, b) => a.created_at - b.created_at).forEach((e) => {
     if (e.type === "pre_tool") {
-      (preQueue[e.tool_name] = preQueue[e.tool_name] || []).push({ ...e, done: false });
+      const pre = { ...e, done: false };
+      if (e.tool_use_id) preById[e.tool_use_id] = pre;
+      else (preQueue[e.tool_name] = preQueue[e.tool_name] || []).push(pre);
     } else if (e.type === "post_tool") {
-      const q = preQueue[e.tool_name];
-      if (q && q.length) {
-        const pre = q.shift();
-        paired.push({ ...pre, done: true, output: e.output, duration_ms: e.duration_ms });
+      let pre = null;
+      if (e.tool_use_id && preById[e.tool_use_id]) {
+        pre = preById[e.tool_use_id];
+        delete preById[e.tool_use_id];
+      } else {
+        const q = preQueue[e.tool_name];
+        if (q && q.length) pre = q.shift();
       }
+      if (pre) paired.push({ ...pre, done: true, output: e.output, duration_ms: e.duration_ms });
     }
   });
+  Object.values(preById).forEach((e) => paired.push(e));
   Object.values(preQueue).forEach((q) => q.forEach((e) => paired.push(e)));
 
   console.log(`[chat] messages=${messages.length} events=${events.length} paired=${paired.length}`);
@@ -402,8 +456,25 @@ async function sendChatMessage() {
   await loadChatHistory();
 }
 
+function getCurrentMemoryProjectId() {
+  if (state.selectedSessionId) {
+    const session = state.sessions.find((item) => item.id === state.selectedSessionId);
+    if (session?.project_id) return session.project_id;
+  }
+  const latest = [...state.sessions]
+    .sort((a, b) => (b.started_at || 0) - (a.started_at || 0))
+    .find((item) => item.project_id);
+  return latest?.project_id || null;
+}
+
 async function loadMemories() {
   let url = `${SERVER}/memory?status=${state.memoryFilter}`;
+  if (state.memoryScope === "current") {
+    const projectId = getCurrentMemoryProjectId();
+    if (projectId) {
+      url += `&project_id=${encodeURIComponent(projectId)}`;
+    }
+  }
   if (state.memoryFilter === "active" && state.tierFilter !== "all") {
     url += `&tier=${encodeURIComponent(state.tierFilter)}`;
   }
@@ -417,21 +488,23 @@ async function reviewMemory(memoryId, status) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
   });
-  showToast(status === "active" ? "记忆已启用" : "记忆已拒绝");
+  showToast("记忆已启用");
   await loadMemories();
 }
 
-/**
- * 将长期记忆降级为短期并恢复 active 状态，供人工确认复查结果时使用。
- * @param {string} memoryId - 记忆 ID
- */
-async function downgradeMemory(memoryId) {
+async function promoteMemory(memoryId) {
   await fetchJson(`${SERVER}/memory/${memoryId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tier: "short", status: "active" }),
+    body: JSON.stringify({ tier: "long" }),
   });
-  showToast("已降级为短期记忆");
+  showToast("已升为长期记忆");
+  await loadMemories();
+}
+
+async function deleteMemory(memoryId) {
+  await fetchJson(`${SERVER}/memory/${memoryId}`, { method: "DELETE" });
+  showToast("记忆已删除");
   await loadMemories();
 }
 
@@ -459,7 +532,11 @@ function connectWebSocket() {
     if (payload.type === "event") {
       state.events.unshift(payload.data);
       state.events = state.events.slice(0, 100);
-      if (state.inChat && payload.data.session_id === state.selectedSessionId) {
+      const relatedToCurrentChat = state.inChat && (
+        payload.data.session_id === state.selectedSessionId ||
+        payload.data.parent_session_id === state.selectedSessionId
+      );
+      if (relatedToCurrentChat) {
         loadChatHistory().catch(() => {});
       }
     }
@@ -484,6 +561,8 @@ function connectWebSocket() {
 
 async function init() {
   setConnectionStatus(false);
+  updateMemoryFilterButtons();
+  updateMemoryScopeButtons();
   await loadStatusData();
   await loadMemories();
   connectWebSocket();
@@ -495,18 +574,43 @@ dom.chatForm.addEventListener("submit", (e) => {
   e.preventDefault();
   sendChatMessage().catch((e) => { console.error("发送失败", e); showToast("消息发送失败"); });
 });
+function updateMemoryFilterButtons() {
+  dom.memoryFilterPending.classList.toggle("active", state.memoryFilter === "pending");
+  dom.memoryFilterReview.classList.toggle("active", state.memoryFilter === "review");
+  dom.memoryFilterActive.classList.toggle("active", state.memoryFilter === "active");
+}
+
+function updateMemoryScopeButtons() {
+  dom.memoryScopeCurrent.classList.toggle("active", state.memoryScope === "current");
+  dom.memoryScopeAll.classList.toggle("active", state.memoryScope === "all");
+}
+
 dom.memoryFilterPending.addEventListener("click", () => {
   state.memoryFilter = "pending";
   state.tierFilter = "all";
-  dom.memoryFilterPending.classList.add("active");
-  dom.memoryFilterActive.classList.remove("active");
+  updateMemoryFilterButtons();
+  loadMemories().catch(() => {});
+});
+dom.memoryFilterReview.addEventListener("click", () => {
+  state.memoryFilter = "review";
+  state.tierFilter = "all";
+  updateMemoryFilterButtons();
   loadMemories().catch(() => {});
 });
 dom.memoryFilterActive.addEventListener("click", () => {
   state.memoryFilter = "active";
   state.tierFilter = "all";
-  dom.memoryFilterActive.classList.add("active");
-  dom.memoryFilterPending.classList.remove("active");
+  updateMemoryFilterButtons();
+  loadMemories().catch(() => {});
+});
+dom.memoryScopeCurrent.addEventListener("click", () => {
+  state.memoryScope = "current";
+  updateMemoryScopeButtons();
+  loadMemories().catch(() => {});
+});
+dom.memoryScopeAll.addEventListener("click", () => {
+  state.memoryScope = "all";
+  updateMemoryScopeButtons();
   loadMemories().catch(() => {});
 });
 

@@ -9,9 +9,61 @@ from sqlalchemy.orm import Session as DBSession
 
 from server.database import get_db
 from server.models import Memory as MemoryModel
+from server.models import Session as SessionModel
 from server.schemas import MemoryCreate, MemoryOut, MemoryUpdate
 
 router = APIRouter(prefix="/memory", tags=["memory"])
+
+_REVIEW_HIT_THRESHOLD = 3
+_7_DAYS = 7 * 86400
+
+
+def _resolve_project_id(
+    db: DBSession,
+    session_id: Optional[str],
+    fallback_project_id: Optional[str],
+) -> Optional[str]:
+    """
+    优先根据 session_id 解析所属项目，仅当会话没有项目时才回退到显式 project_id。
+
+    参数:
+        db: 数据库会话。
+        session_id: 调用方传入的会话 ID。
+        fallback_project_id: 调用方传入的项目回退值。
+
+    返回值:
+        解析出的项目 ID；若两者都不可用则返回 None。
+    """
+    if session_id:
+        session = db.get(SessionModel, session_id)
+        if session and session.project_id:
+            return session.project_id
+    return fallback_project_id
+
+
+def _bump_short_memory_hit(memory: MemoryModel, now: float) -> None:
+    """
+    更新短期活跃记忆的 7 天命中统计，并在达到阈值后转入 review。
+
+    参数:
+        memory: 本次命中的记忆对象。
+        now: 当前时间戳。
+
+    返回值:
+        无。
+    """
+    if memory.last_hit_at is None or now - memory.last_hit_at > _7_DAYS:
+        memory.hit_count_7d = 1
+    else:
+        memory.hit_count_7d += 1
+
+    memory.last_hit_at = now
+    memory.updated_at = now
+
+    if memory.hit_count_7d >= _REVIEW_HIT_THRESHOLD:
+        memory.status = "review"
+        memory.review_reason = "hit_threshold"
+        memory.review_hit_count = memory.hit_count_7d
 
 
 @router.post("", response_model=MemoryOut)
@@ -34,25 +86,33 @@ def create_memory(body: MemoryCreate, db: DBSession = Depends(get_db)):
 
 
 @router.get("/search", response_model=List[MemoryOut])
-def search_memories(q: str, project_id: Optional[str] = None, db: DBSession = Depends(get_db)):
+def search_memories(
+    q: str,
+    project_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    db: DBSession = Depends(get_db),
+):
     """
     搜索记忆：先返回 long+active，不足 3 条再补 short+active，合计最多 3 条。
 
     参数:
         q: 搜索关键词，匹配 title/content/tags。
         project_id: 可选项目 ID 过滤。
+        session_id: 可选会话 ID，用于优先解析当前项目范围。
         db: 数据库会话。
 
     返回值:
         匹配的记忆列表，长期记忆优先。
     """
+    resolved_project_id = _resolve_project_id(db, session_id, project_id)
+
     def _query(tier: str):
         qr = db.query(MemoryModel).filter(
             MemoryModel.status == "active",
             MemoryModel.tier == tier,
         )
-        if project_id:
-            qr = qr.filter(MemoryModel.project_id == project_id)
+        if resolved_project_id:
+            qr = qr.filter(MemoryModel.project_id == resolved_project_id)
         # 按空格/标点拆词，任意一个词命中 title/content/tags 即匹配
         tokens = [t for t in re.split(r"[\s/\-.,;:]+", q) if len(t) >= 2][:10]
         if not tokens:
@@ -68,10 +128,26 @@ def search_memories(q: str, project_id: Optional[str] = None, db: DBSession = De
         return qr.filter(or_(*word_conds))
 
     results = _query("long").limit(3).all()
-    if len(results) < 3:
-        remaining = 3 - len(results)
-        short_results = _query("short").limit(remaining).all()
+    remaining = 3 - len(results)
+    now = time.time()
+    changed = False
+
+    if remaining > 0:
+        short_results = []
+        for memory in _query("short").all():
+            if len(short_results) >= remaining:
+                break
+            _bump_short_memory_hit(memory, now)
+            changed = True
+            if memory.status == "active":
+                short_results.append(memory)
         results = results + short_results
+
+    if changed:
+        db.commit()
+        for memory in results:
+            db.refresh(memory)
+
     return results
 
 
@@ -107,11 +183,7 @@ def list_memories(
 @router.patch("/{memory_id}", response_model=MemoryOut)
 def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(get_db)):
     """
-    更新记忆状态或 tier：
-    - tier=short：降级操作，将 review/long 改回 short/active
-    - status：直接更新状态，active 时记录 activated_at
-    - tier=long：仅升级 tier（通常由定时任务触发，此接口供测试使用）
-    每次操作均更新 updated_at。
+    仅支持两类人工确认流转：pending 启用为短期记忆，或 review 短期记忆晋升为长期记忆。
 
     参数:
         memory_id: 目标记忆 ID。
@@ -126,29 +198,47 @@ def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(ge
         raise HTTPException(status_code=404, detail="memory not found")
 
     now = time.time()
+    has_status = body.status is not None
+    has_tier = body.tier is not None
 
-    if body.tier == "short":
-        # 降级：review/long → short/active
-        memory.tier = "short"
+    if has_status == has_tier:
+        raise HTTPException(status_code=400, detail="必须且只能更新 status 或 tier 其中一个字段")
+
+    if body.status == "active":
+        if memory.status != "pending":
+            raise HTTPException(status_code=422, detail="仅 pending 记忆可启用")
         memory.status = "active"
-        memory.updated_at = now
-    elif body.status is not None:
-        if body.status == "review" and memory.status != "active":
-            raise HTTPException(status_code=422, detail="仅 active 状态的记忆可标记为 review")
-        if body.status == "rejected":
-            db.delete(memory)
-            db.commit()
-            return memory
-        memory.status = body.status
-        if body.status == "active":
-            memory.activated_at = now
+        memory.activated_at = now
         memory.updated_at = now
     elif body.tier == "long":
+        if memory.status != "review" or memory.tier != "short":
+            raise HTTPException(status_code=422, detail="仅 review/short 记忆可晋升为长期")
         memory.tier = "long"
+        memory.status = "active"
         memory.updated_at = now
     else:
-        raise HTTPException(status_code=400, detail="请提供 status 或 tier 字段")
+        raise HTTPException(status_code=400, detail="仅支持启用短期记忆或将 review 短期记忆晋升为长期")
 
     db.commit()
     db.refresh(memory)
     return memory
+
+
+@router.delete("/{memory_id}", status_code=204)
+def delete_memory(memory_id: str, db: DBSession = Depends(get_db)):
+    """
+    删除指定记忆，用于拒绝 pending 或 review 记忆。
+
+    参数:
+        memory_id: 目标记忆 ID。
+        db: 数据库会话。
+
+    返回值:
+        无。
+    """
+    memory = db.get(MemoryModel, memory_id)
+    if not memory:
+        raise HTTPException(status_code=404, detail="memory not found")
+
+    db.delete(memory)
+    db.commit()

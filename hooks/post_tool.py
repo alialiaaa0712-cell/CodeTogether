@@ -6,6 +6,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import hooks._common as _common
+from hooks.stop import sync_messages
 
 
 def main():
@@ -31,6 +32,11 @@ def main():
 
     tool_name = data.get("tool_name")
     tr = data.get("tool_response")
+    cwd = data.get("cwd")
+
+    _common.ensure_session(agent_session_id, cwd=cwd)
+    if agent_session_id:
+        sync_messages(agent_session_id, cwd or "")
 
     if tool_name == "Agent":
         output = json.dumps(tr, ensure_ascii=False) if tr is not None else None
@@ -52,9 +58,10 @@ def main():
         "session_id": agent_session_id,
         "type": "post_tool",
         "tool_name": tool_name,
-        "input": data.get("tool_input"),
+        "tool_use_id": data.get("tool_use_id"),
         "output": output,
-        "cwd": data.get("cwd"),
+        "cwd": cwd,
+        "duration_ms": data.get("duration_ms"),
         "parent_session_id": parent_session_id,
     })
 

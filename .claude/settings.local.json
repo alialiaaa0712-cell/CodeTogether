@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pytest \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_housekeeping.py\" -q)",
+      "Bash(pytest \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_hooks.py::test_search_memory_includes_session_id_and_project_fallback\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_extractor.py\" -q)",
+      "Bash(pytest \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_hooks.py\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_extractor.py\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_agents.py\" -q)",
+      "Bash(pytest \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_mobile.py::test_mobile_memory_html_contains_scope_toggle\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_mobile.py::test_mobile_memory_script_defaults_to_current_project_scope\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_mobile.py::test_mobile_memory_script_uses_delete_for_reject\" -q)",
+      "Bash(pytest \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_memory.py\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_housekeeping.py\" -q)",
+      "Bash(pytest \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_mobile.py::test_mobile_memory_script_always_shows_hit_count\" -q)",
+      "Bash(pytest \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_mobile.py::test_mobile_memory_script_always_shows_hit_count\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_mobile.py::test_mobile_memory_html_contains_scope_toggle\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_mobile.py::test_mobile_memory_script_defaults_to_current_project_scope\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_mobile.py::test_mobile_memory_script_uses_delete_for_reject\" -q)"
+    ]
+  }
+}

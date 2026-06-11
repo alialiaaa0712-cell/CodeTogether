@@ -24,11 +24,34 @@ logging.basicConfig(level=logging.INFO)
 if not os.getenv("TESTING"):
     Base.metadata.create_all(bind=engine)
     if not _is_sqlite:
-        from sqlalchemy import text, inspect
+        from sqlalchemy import inspect, text
         _insp = inspect(engine)
-        if "parent_session_id" not in [c["name"] for c in _insp.get_columns("events")]:
+        _event_cols = [c["name"] for c in _insp.get_columns("events")]
+        if "parent_session_id" not in _event_cols:
             with engine.connect() as _conn:
                 _conn.execute(text("ALTER TABLE events ADD COLUMN parent_session_id VARCHAR(36)"))
+                _conn.commit()
+        if "tool_use_id" not in _event_cols:
+            with engine.connect() as _conn:
+                _conn.execute(text("ALTER TABLE events ADD COLUMN tool_use_id VARCHAR(64)"))
+                _conn.commit()
+
+        _memory_cols = [c["name"] for c in _insp.get_columns("memories")]
+        if "hit_count_7d" not in _memory_cols:
+            with engine.connect() as _conn:
+                _conn.execute(text("ALTER TABLE memories ADD COLUMN hit_count_7d INT NOT NULL DEFAULT 0"))
+                _conn.commit()
+        if "last_hit_at" not in _memory_cols:
+            with engine.connect() as _conn:
+                _conn.execute(text("ALTER TABLE memories ADD COLUMN last_hit_at DOUBLE NULL"))
+                _conn.commit()
+        if "review_reason" not in _memory_cols:
+            with engine.connect() as _conn:
+                _conn.execute(text("ALTER TABLE memories ADD COLUMN review_reason VARCHAR(255) NULL"))
+                _conn.commit()
+        if "review_hit_count" not in _memory_cols:
+            with engine.connect() as _conn:
+                _conn.execute(text("ALTER TABLE memories ADD COLUMN review_hit_count INT NULL"))
                 _conn.commit()
 
 

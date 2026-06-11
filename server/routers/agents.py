@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from pathlib import PurePath
 from typing import List, Literal, Optional
 
 logger = logging.getLogger(__name__)
@@ -10,11 +12,66 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session as DBSession
 
-from server.database import get_db
+from server.database import SessionLocal, get_db
+from server.models import Event as EventModel
+from server.models import Memory as MemoryModel
+from server.models import Message as MessageModel
+from server.models import Project as ProjectModel
 from server.models import Session as SessionModel
 from server.schemas import SessionCreate, SessionOut
+from server.services.extractor import extract_memories
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+
+
+def _normalize_project_cwd(cwd: str) -> Optional[str]:
+    """
+    将会话 cwd 规范化为可稳定匹配项目的路径标识。
+
+    参数:
+        cwd: 原始工作目录路径。
+
+    返回值:
+        规范化后的完整路径；若路径为空则返回 None。
+    """
+    normalized_cwd = str(PurePath(cwd)).strip()
+    if not normalized_cwd:
+        return None
+    return normalized_cwd
+
+
+def _ensure_project_for_session(body: SessionCreate, db: DBSession) -> Optional[str]:
+    """
+    为会话解析并确保 project_id 存在，优先按完整 cwd 路径匹配项目。
+
+    参数:
+        body: 创建会话请求体，可能只包含 cwd 而未显式提供 project_id。
+        db: 数据库会话，用于查询或创建项目记录。
+
+    返回值:
+        若可确定项目则返回 project_id；否则返回 None。
+    """
+    if body.project_id:
+        return body.project_id
+    if not body.cwd:
+        return None
+
+    normalized_cwd = _normalize_project_cwd(body.cwd)
+    if not normalized_cwd:
+        return None
+
+    project_name = PurePath(normalized_cwd).name.strip()
+    if not project_name:
+        return None
+
+    existing_project = db.query(ProjectModel).filter(ProjectModel.repo_url == normalized_cwd).first()
+    if existing_project:
+        return existing_project.id
+
+    project = ProjectModel(name=project_name, repo_url=normalized_cwd)
+    db.add(project)
+    db.flush()
+    return project.id
 
 
 async def _broadcast_session_update(request: Request, session: SessionModel) -> None:
@@ -63,10 +120,15 @@ async def create_session(body: SessionCreate, request: Request, db: DBSession = 
     if existing:
         if body.cwd and not existing.cwd:
             existing.cwd = body.cwd
+            if not existing.project_id:
+                existing.project_id = _ensure_project_for_session(body, db)
             db.commit()
             db.refresh(existing)
         return existing
-    session = SessionModel(**body.model_dump())
+
+    project_id = _ensure_project_for_session(body, db)
+    session_payload = body.model_dump(exclude={"project_id"})
+    session = SessionModel(**session_payload, project_id=project_id)
     db.add(session)
     db.commit()
     db.refresh(session)
@@ -215,31 +277,41 @@ async def delete_session(session_id: str, request: Request, db: DBSession = Depe
 
 
 def _trigger_extraction(session_id: str, project_id: Optional[str]) -> None:
-    """异步触发知识提炼，在后台线程中运行，不阻塞 HTTP 响应。"""
-    import threading
-    from server.services.extractor import extract_memories
-    from server.models import Event as EventModel, Memory as MemoryModel
-    from server.database import SessionLocal
+    """异步触发知识提炼，优先从聊天消息中提炼结论，不阻塞 HTTP 响应。"""
 
     def _run():
         save_db = SessionLocal()
         try:
-            recent_events = (
-                save_db.query(EventModel)
-                .filter(EventModel.session_id == session_id)
-                .order_by(EventModel.created_at.asc())
-                .limit(20)
+            recent_messages = (
+                save_db.query(MessageModel)
+                .filter(MessageModel.session_id == session_id)
+                .order_by(MessageModel.created_at.desc())
+                .limit(12)
                 .all()
             )
+            recent_messages = list(reversed(recent_messages))
             summary_lines = [
-                f"{e.tool_name} input={str(e.input or '')[:100]} output={str(e.output or '')[:150]}"
-                for e in recent_events
+                f"{message.role}: {message.content[:200]}"
+                for message in recent_messages
+                if message.content and message.content.strip()
             ]
+            if not summary_lines:
+                recent_events = (
+                    save_db.query(EventModel)
+                    .filter(EventModel.session_id == session_id)
+                    .order_by(EventModel.created_at.asc())
+                    .limit(10)
+                    .all()
+                )
+                summary_lines = [
+                    f"{event.tool_name} input={str(event.input or '')[:80]} output={str(event.output or '')[:120]}"
+                    for event in recent_events
+                ]
             summary = "\n".join(summary_lines)
 
             items = extract_memories(summary, project_id=project_id)
 
-            for item in items:
+            for item in items[:3]:
                 save_db.add(MemoryModel(
                     project_id=item.get("project_id"),
                     title=item["title"],

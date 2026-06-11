@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import glob
+import re
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -52,13 +53,88 @@ def _save_sync_offset(session_id: str, offset: int) -> None:
     open(os.path.join(SYNC_STATE_DIR, f"{session_id}.offset"), "w").write(str(offset))
 
 
-def _extract_messages(path: str, start_offset: int = 0) -> tuple:
+def _get_session_start_time(path: str) -> float:
     """
-    从 JSONL 文件提取对话消息（user 和 assistant 文本块）。
+    读取 JSONL 第一条记录的 timestamp，作为 session 启动时间。
 
-    start_offset 指定从哪个字节开始读，跳过已同步内容；
-    返回 (messages, end_offset)，end_offset 为读完后的文件位置。
-    工具调用结果（tool_result）和纯工具调用（tool_use）不计入对话。
+    用于过滤 user 消息：只同步 session 启动之后产生的消息，避免历史消息重复写入。
+    读取失败时返回 0.0（相当于不过滤）。
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                record = json.loads(line)
+                ts = record.get("timestamp", "")
+                if ts:
+                    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    return dt.timestamp()
+    except Exception:
+        pass
+    return 0.0
+
+
+def _is_real_user_text(text: str) -> bool:
+    """
+    判断 user text 是否属于真实用户输入，而不是 IDE / Skill / 中断噪音。
+
+    参数:
+        text: 归一化后的文本内容。
+
+    返回值:
+        True 表示应同步到手机端；False 表示属于系统注入或噪音。
+    """
+    if not text:
+        return False
+    if text in {"Continue from where you left off.", "No response requested.", "[Request interrupted by user]"}:
+        return False
+    if text.startswith("API Error:"):
+        return False
+    if text.startswith("Base directory for this skill:"):
+        return False
+    if text.startswith("<EXTREMELY_IMPORTANT>"):
+        return False
+    if text.startswith("## Overview\n") or text.startswith("## The Process\n"):
+        return False
+    if re.match(r"^name: .*\ndescription: .*", text):
+        return False
+    return True
+
+
+def _is_real_assistant_text(text: str) -> bool:
+    """
+    判断 assistant text 是否属于应展示给手机端的真实输出。
+
+    参数:
+        text: 归一化后的文本内容。
+
+    返回值:
+        True 表示应同步；False 表示属于控制占位或噪音。
+    """
+    if not text:
+        return False
+    if text == "No response requested.":
+        return False
+    return True
+
+
+
+def _extract_messages(path: str, start_offset: int = 0, user_min_ts: float = 0.0) -> tuple:
+    """
+    从 JSONL 文件提取对话消息（仅 text block）。
+
+    规则：
+    1. 只处理 `type in (user, assistant)` 的记录
+    2. 只提取 `message.content[*].type == text` 的 block
+    3. assistant：保留所有真实 text，由 hook 触发更频繁的增量同步
+    4. user：额外过滤 IDE/Skill/中断噪音
+
+    参数:
+        path: transcript 文件路径。
+        start_offset: 起始字节偏移。
+        user_min_ts: user 消息最早时间戳阈值（Unix 秒）。
+
+    返回值:
+        tuple[list[dict], int]: 提取出的消息列表与新的文件偏移量。
     """
     messages = []
     with open(path, encoding="utf-8") as f:
@@ -72,26 +148,38 @@ def _extract_messages(path: str, start_offset: int = 0) -> tuple:
             except Exception:
                 continue
             rtype = record.get("type")
-            if rtype != "assistant":
+            if rtype not in ("assistant", "user"):
                 continue
             content = record.get("message", {}).get("content", [])
             text_parts = []
             for block in content:
-                if not isinstance(block, dict):
+                if not isinstance(block, dict) or block.get("type") != "text":
                     continue
-                if block.get("type") in ("tool_use", "tool_result"):
-                    continue
-                if block.get("type") == "text" and block.get("text", "").strip():
-                    text_parts.append(block["text"])
+                text = re.sub(r"<ide_[^>]+>.*?</ide_[^>]+>", "", (block.get("text") or ""), flags=re.DOTALL).strip()
+                if text:
+                    text_parts.append(text)
             if not text_parts:
                 continue
             text = "\n".join(text_parts)
-            if text.startswith("API Error:"):
-                continue
+            if rtype == "user":
+                if not _is_real_user_text(text):
+                    continue
+                if user_min_ts > 0:
+                    ts_str = record.get("timestamp", "")
+                    try:
+                        rec_ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
+                    except Exception:
+                        rec_ts = 0.0
+                    if rec_ts < user_min_ts:
+                        continue
+            else:
+                if not _is_real_assistant_text(text):
+                    continue
+            role = "assistant" if rtype == "assistant" else "user"
             messages.append({
                 "uuid": record.get("uuid", ""),
-                "role": "assistant",
-                "text": "\n".join(text_parts),
+                "role": role,
+                "text": text,
                 "timestamp": record.get("timestamp", ""),
             })
         end_offset = f.tell()
@@ -109,9 +197,10 @@ def sync_messages(session_id: str, cwd: str) -> None:
         return
 
     start_offset = _get_sync_offset(session_id)
+    user_min_ts = _get_session_start_time(path) if start_offset == 0 else 0.0
 
     try:
-        messages, end_offset = _extract_messages(path, start_offset)
+        messages, end_offset = _extract_messages(path, start_offset, user_min_ts)
     except Exception:
         return
 

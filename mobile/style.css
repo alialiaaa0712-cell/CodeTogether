@@ -20,23 +20,17 @@ body {
   top: 0;
   z-index: 10;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  height: 48px;
   background: linear-gradient(135deg, #111827, #1f2937);
   color: #fff;
 }
 
-.topbar h1 {
-  margin: 0;
-  font-size: 20px;
-}
-
-.subtitle {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.78);
+.topbar-title {
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .conn-status {
@@ -215,7 +209,9 @@ button.danger {
   color: #6b7280;
 }
 
-.memory-toolbar {
+.memory-scope-switch,
+.memory-toolbar,
+.memory-filter-row {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
@@ -227,8 +223,10 @@ button.danger {
   color: #111827;
 }
 
-.pill.active {
-  background: #1d4ed8;
+.pill.active,
+.memory-scope-switch button.active,
+.memory-filter-row button.active {
+  background: #2563eb;
   color: #fff;
 }
 
@@ -290,21 +288,23 @@ button.danger {
   opacity: 1;
 }
 
-/* topbar 布局：标题区与返回按钮共用同一容器 */
+/* topbar 布局：返回按钮 + 标题区同行 */
 #topbar-main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .back-btn {
   background: transparent;
   color: #fff;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 500;
-  padding: 6px 0;
-  width: auto;
+  padding: 0;
+  width: 32px;
+  flex-shrink: 0;
   border-radius: 0;
 }
 
@@ -432,16 +432,33 @@ button.danger {
   margin: 2px 0;
   border-radius: 8px;
   background: #f8fafc;
-  font-size: 12px;
-  color: #6b7280;
+  font-size: 13px;
+  color: #374151;
   border-left: 3px solid #e5e7eb;
+}
+
+.tool-call.post_tool {
+  border-left-color: #10b981;
+}
+
+.tool-call.pre_tool {
+  border-left-color: #f59e0b;
 }
 
 .tool-call-summary {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 6px 10px;
+}
+
+.tool-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 12px;
 }
 
 .tool-name {
@@ -450,6 +467,21 @@ button.danger {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tool-io {
+  border-top: 1px solid #e5e7eb;
+  font-size: 11px;
+}
+
+.tool-io summary {
+  padding: 3px 10px;
+  cursor: pointer;
+  color: #9ca3af;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  user-select: none;
 }
 
 .tool-status.pre_tool { color: #f59e0b; }
@@ -507,8 +539,13 @@ button.danger {
 }
 
 .memory-review {
-  border-left: 3px solid #f59e0b;
+  border-left: 3px solid #2563eb;
   padding-left: 10px;
+}
+
+.memory-hit-hint {
+  color: #6b7280;
+  font-size: 12px;
 }
 
 .tier-filter {

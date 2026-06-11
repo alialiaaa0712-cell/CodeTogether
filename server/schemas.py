@@ -32,7 +32,8 @@ class EventCreate(BaseModel):
     session_id: str
     type: str
     tool_name: Optional[str] = None
-    input: Optional[Dict[str, Any]] = None  # ORM 存 JSON 字符串，路由层负责转换
+    tool_use_id: Optional[str] = None
+    input: Optional[Dict[str, Any]] = None
     output: Optional[str] = None
     duration_ms: Optional[int] = None
     parent_session_id: Optional[str] = None
@@ -43,6 +44,7 @@ class EventOut(BaseModel):
     session_id: str
     type: str
     tool_name: Optional[str] = None
+    tool_use_id: Optional[str] = None
     input: Optional[Dict[str, Any]] = None
     output: Optional[str] = None
     duration_ms: Optional[int] = None
@@ -110,6 +112,10 @@ class MemoryOut(BaseModel):
     created_at: float
     activated_at: Optional[float] = None
     updated_at: float
+    hit_count_7d: int
+    last_hit_at: Optional[float] = None
+    review_reason: Optional[str] = None
+    review_hit_count: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
