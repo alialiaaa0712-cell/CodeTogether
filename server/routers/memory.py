@@ -8,13 +8,13 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session as DBSession
 
 from server.database import get_db
+from server.models import ApiKey
 from server.models import Memory as MemoryModel
 from server.models import MemoryFeedbackLog as MemoryFeedbackLogModel
 from server.models import MemorySearchExposure as MemorySearchExposureModel
 from server.models import Session as SessionModel
 from server.routers.auth import get_current_key
 from server.schemas import MemoryCreate, MemoryFeedbackRequest, MemoryOut, MemorySearchRequest, MemoryUpdate
-from server.models import ApiKey
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 

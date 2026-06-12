@@ -281,7 +281,6 @@ async def delete_session(session_id: str, request: Request, db: DBSession = Depe
         request: 当前请求对象，用于广播删除事件。
         db: 数据库会话。
     """
-    from server.models import Message as MessageModel, Event as EventModel
     session = db.get(SessionModel, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")
