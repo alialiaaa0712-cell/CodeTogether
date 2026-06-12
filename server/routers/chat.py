@@ -96,7 +96,7 @@ async def send_message(body: MessageCreate, request: Request, db: DBSession = De
 
 
 @router.get("/{session_id}/poll", response_model=List[MessageOut])
-def poll_messages(session_id: str, db: DBSession = Depends(get_db)):
+def poll_messages(session_id: str, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """PreToolUse hook 调用：原子性取走该会话所有 pending 消息，标记为 delivered。"""
     messages = (
         db.query(MessageModel)
