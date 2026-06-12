@@ -6,7 +6,7 @@
   <meta name="description" content="CodeTogether Mobile Web App">
   <title>CodeTogether</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260612g">
 </head>
 <body>
   <header class="topbar">
@@ -20,42 +20,102 @@
   <main class="page-shell">
     <!-- 状态页：按项目分类展示 agent 列表 -->
     <section id="view-agents" class="view active">
+      <section class="hero-panel card card-hero">
+        <div class="hero-copy">
+          <h1 class="hero-title">CodeTogether</h1>
+        </div>
+        <div id="agent-overview" class="overview-grid" aria-live="polite"></div>
+      </section>
+
+      <section class="view-section-head compact-head">
+        <div>
+          <h2>Agent</h2>
+        </div>
+      </section>
+
       <div id="project-groups"></div>
     </section>
 
     <!-- 聊天页：点击 agent 后进入 -->
     <section id="view-chat" class="view">
+      <section class="view-section-head compact-head">
+        <div>
+          <h2>聊天</h2>
+        </div>
+      </section>
       <div id="chat-agent-info" class="chat-agent-info"></div>
       <div id="chat-history" class="chat-history"></div>
+      <button id="chat-jump-latest" class="chat-jump-latest" type="button" hidden>有新消息，跳到最新</button>
       <form id="chat-form" class="chat-form">
         <textarea id="chat-input" rows="3" placeholder="输入发给 Agent 的消息"></textarea>
-        <button id="chat-send" type="submit">发送</button>
+        <button id="chat-send" type="submit">发送消息</button>
       </form>
     </section>
 
     <!-- 记忆页 -->
     <section id="view-memory" class="view">
-      <div class="card">
+      <section class="view-section-head compact-head compact-memory-head">
+        <div>
+          <h2>记忆</h2>
+        </div>
+      </section>
+      <div class="card memory-board">
+        <div class="memory-board-head">
+          <div>
+            <strong>审核台</strong>
+          </div>
+          <button id="memory-filter-open" class="secondary filter-open-btn" type="button">筛选</button>
+        </div>
+        <div id="memory-filter-summary" class="filter-summary" aria-live="polite"></div>
+        <div class="memory-board-list">
+          <div id="memory-list" class="memory-list"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="memory-filter-drawer" class="drawer" aria-hidden="true">
+    <button id="memory-filter-backdrop" class="drawer-backdrop" type="button" aria-label="关闭筛选"></button>
+    <section class="drawer-sheet" aria-label="记忆筛选面板">
+      <div class="drawer-head">
+        <strong>筛选记忆</strong>
+        <button id="memory-filter-close" class="drawer-close secondary" type="button">完成</button>
+      </div>
+
+      <div class="drawer-group">
+        <span class="drawer-label">范围</span>
         <div class="memory-scope-switch">
           <button id="memory-scope-current" class="pill active" type="button">当前项目</button>
           <button id="memory-scope-all" class="pill" type="button">全部项目</button>
         </div>
+      </div>
+
+      <div class="drawer-group">
+        <span class="drawer-label">状态</span>
         <div class="memory-toolbar memory-filter-row">
           <button id="memory-filter-pending" class="pill active" type="button">待启用</button>
           <button id="memory-filter-review" class="pill" type="button">待晋升</button>
           <button id="memory-filter-active" class="pill" type="button">已启用</button>
         </div>
-        <div id="memory-list" class="memory-list"></div>
+      </div>
+
+      <div id="memory-tier-drawer-group" class="drawer-group" style="display:none">
+        <span class="drawer-label">类型</span>
+        <div id="memory-tier-filter" class="tier-filter"></div>
+      </div>
+
+      <div class="drawer-actions">
+        <button id="memory-filter-reset" class="secondary" type="button">重置</button>
+        <button id="memory-filter-apply" type="button">应用</button>
       </div>
     </section>
-  </main>
-
+  </div>
   <nav class="tab-bar">
     <button class="tab-btn active" data-tab="agents" type="button">Agent</button>
     <button class="tab-btn" data-tab="memory" type="button">记忆</button>
   </nav>
 
   <div id="toast" class="toast"></div>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260612b"></script>
 </body>
 </html>

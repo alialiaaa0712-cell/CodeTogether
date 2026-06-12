@@ -91,13 +91,7 @@ async def receive_event(body: EventCreate, request: Request, db: DBSession = Dep
         manager = request.app.state.ws_manager
         await manager.broadcast({
             "type": "event",
-            "data": {
-                "id": event.id,
-                "session_id": event.session_id,
-                "type": event.type,
-                "tool_name": event.tool_name,
-                "created_at": event.created_at,
-            }
+            "data": EventOut.model_validate(event).model_dump(),
         })
     except Exception as exc:
         logging.getLogger(__name__).warning("WebSocket 广播失败: %s", exc)

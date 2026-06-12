@@ -34,6 +34,38 @@ python3 codetogether.py install-service   # 安装 launchd 服务（macOS 开机
 python3 codetogether.py uninstall-service # 卸载 launchd 服务
 ```
 
+## 日常使用
+
+### 首次接入
+
+1. 运行 `python3 codetogether.py init`
+2. 确认服务已启动在 `127.0.0.1:7879`
+3. **新开一个 Claude Code 会话**
+
+之所以要新开会话，是因为 `codetogether.py init` 会把 `codetogether-memory` 写入 `~/.claude.json`，但 MCP 工具通常在 Claude Code 会话启动时加载；当前已打开的窗口不一定会热加载新工具。
+
+### 日常启动
+
+如果 Hooks 和 MCP 已经注册过，平时只需要：
+
+```bash
+python3 codetogether.py start
+```
+
+如果你改了 `~/.claude.json` 里的 MCP 配置，也需要重新打开 Claude Code 会话，再验证工具是否可见。
+
+### 记忆系统当前工作流
+
+当前记忆不是“全自动工具化写入”，而是分成三段：
+
+1. **写入**：会话结束、session 进入 `stopped` 后，服务端自动提炼最近消息/事件，生成候选记忆
+2. **搜索**：Claude 在需要时通过 `memory_search` 搜索当前项目下的已有记忆
+3. **反馈**：Claude 使用过某条记忆后，通过 `memory_feedback` 提交 `-2/-1/0/+1/+2` 反馈
+
+也就是说：
+- `memory_search` / `memory_feedback` 负责“取用闭环”
+- 新记忆写入仍然来自服务端提炼，不是通过 MCP 工具直接创建
+
 ## 远程访问
 
 局域网内直接用电脑 IP 访问。跨网络推荐 Cloudflare Tunnel：

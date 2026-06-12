@@ -178,3 +178,58 @@ await manager.broadcast(...)
 **原因**：`uvicorn` 在没有 `--reload` 的情况下不会热重载，改了代码要手动重启服务。
 
 **教训**：开发时始终加 `--reload`；部署时确认进程已重启后再验证行为。
+
+---
+
+## 15. MCP 注册成功不代表当前会话立刻可用
+
+**现象**：`codetogether.py init` 已经把 `codetogether-memory` 写进 `~/.claude.json`，但当前 Claude Code 窗口里仍然看不到 `memory_search` / `memory_feedback`。
+
+**原因**：MCP 工具通常在 Claude Code 会话启动时加载；如果是会话启动后才修改配置，当前窗口不会自动热加载新工具。
+
+**修复 / 教训**：注册 MCP 后，新开一个 Claude Code 会话再验证工具是否可见；不要把“配置文件已写入”误判成“当前窗口已经拿到工具”。
+
+---
+
+## 16. `memory_search` / `memory_feedback` 不是记忆写入入口
+
+**现象**：接上 MCP 后，很容易误以为“记忆系统已经工具化”，因此 Agent 可以通过这两个工具直接创建新记忆。
+
+**原因**：当前实现里，MCP 只负责**搜索已有记忆**和**提交反馈**；真正的记忆写入仍然是 session 结束后，在 `stopped` 状态下由服务端自动触发提炼。
+
+**修复 / 教训**：区分清楚三条链路：
+- 写入记忆：`agents.py` 在 session `stopped` 后触发提炼
+- 搜索记忆：`memory_search`
+- 反馈记忆：`memory_feedback`
+
+排查“为什么没写入新记忆”时，不要先去看 MCP，要先看 session 是否真的停下、提炼线程是否跑起来。
+
+---
+
+## 17. 迁移只补了部分列会导致 ORM 查询直接 500
+
+**现象**：接口 `GET /memory?status=pending` 直接 500，MySQL 报 `Unknown column 'memories.review_reason' in 'field list'`。
+
+**原因**：`server/models.py` 里的 `Memory` ORM 已经声明了 `review_reason`，但启动迁移最初只补了 `score_total`、`feedback_count`、`last_feedback_at`、`review_score`，漏掉了 `review_reason`。ORM 查询会按模型取列，缺一列都会炸。
+
+**修复**：在启动迁移里补上：
+```python
+"review_reason": "ALTER TABLE memories ADD COLUMN review_reason VARCHAR(255) NULL",
+```
+
+**教训**：只要改了 ORM 字段，就要逐项反查启动迁移是否完整覆盖；“大部分列都补了”不等于可用。
+
+---
+
+## 18. “清空旧记忆”必须真的清表，不能只在旧结构命中时顺便删
+
+**现象**：已经决定全面置换记忆系统，但库里历史记忆还在，前端和接口继续读到旧数据。
+
+**原因**：之前的迁移逻辑只是“检测到旧 hit 列时顺手 `DELETE FROM memories`”，这只是兼容迁移动作，不等于执行了“全面清空旧记忆”的产品决策。
+
+**修复 / 教训**：如果产品决策是清空旧记忆，就要显式清理相关表，而不是把这件事寄托在某个条件分支里。当前相关表包括：
+- `memories`
+- `memory_feedback_logs`
+- `memory_search_exposures`
+
+“迁移时可能会删”不是“已经按要求清空”。

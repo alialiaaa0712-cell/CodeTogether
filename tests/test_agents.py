@@ -106,15 +106,57 @@ def test_create_session_does_not_merge_projects_with_same_basename_under_differe
     assert second_project.repo_url == "/tmp/b/CodeTogether"
 
 
-def test_trigger_extraction_saves_pending_short_memories_with_score_defaults(db):
-    """验证提炼出的候选记忆默认保持 pending/short 与积分零值。"""
+def test_create_session_backfills_project_id_when_existing_session_already_has_cwd(client, db):
+    """
+    验证已存在会话已有 cwd 但缺 project_id 时，重复上报也会回填项目归属。
+
+    参数:
+        client: FastAPI 测试客户端，用于重复上报同一会话。
+        db: 测试数据库会话，用于预置旧会话并校验回填结果。
+
+    返回值:
+        无返回值；通过断言 session 与 project 绑定关系验证回填逻辑。
+    """
+    db.add(Session(id="sess-project-existing-cwd", cwd="/tmp/existing/CodeTogether", project_id=None))
+    db.commit()
+
+    resp = client.post("/agents", json={
+        "id": "sess-project-existing-cwd",
+        "cwd": "/tmp/existing/CodeTogether",
+    })
+
+    assert resp.status_code == 200
+    data = resp.json()
+    db.expire_all()
+    session = db.query(Session).filter(Session.id == "sess-project-existing-cwd").one()
+    project = db.query(Project).filter(Project.id == session.project_id).one()
+    assert data["project_id"] is not None
+    assert session.project_id is not None
+    assert project.repo_url == "/tmp/existing/CodeTogether"
+
+
+def test_trigger_extraction_saves_active_short_memories_with_activation_time(db):
+    """
+    验证自动提炼出的短期记忆会直接启用，并保留积分零值。
+
+    参数:
+        db: 测试数据库会话，用于准备消息与校验记忆落库结果。
+
+    返回值:
+        无返回值；通过断言状态、层级、激活时间和积分字段验证行为。
+    """
     session = Session(id="sess-extract-score", project_id="proj-1")
     db.add(session)
-    db.add(Message(session_id="sess-extract-score", role="assistant", content="MySQL 5.7 不能使用该 DDL", status="delivered"))
+    db.add(Message(
+        session_id="sess-extract-score",
+        role="assistant",
+        content="MySQL 5.7 不能使用该 DDL，否则会导致迁移失败",
+        status="delivered",
+    ))
     db.commit()
 
     returned_items = [
-        {"project_id": "proj-1", "title": "DDL 约束", "content": "MySQL 5.7 不能使用该 DDL", "tags": "mysql"},
+        {"project_id": "proj-1", "title": "DDL 约束", "content": "MySQL 5.7 不能使用该 DDL，否则会导致迁移失败", "tags": "mysql"},
     ]
 
     class ImmediateThread:
@@ -131,10 +173,111 @@ def test_trigger_extraction_saves_pending_short_memories_with_score_defaults(db)
         _trigger_extraction("sess-extract-score", "proj-1")
 
     saved = db.query(Memory).filter(Memory.source_session_id == "sess-extract-score").one()
-    assert saved.status == "pending"
+    assert saved.status == "active"
     assert saved.tier == "short"
+    assert saved.activated_at is not None
+    assert saved.project_id == "proj-1"
     assert saved.score_total == 0
     assert saved.feedback_count == 0
+
+
+def test_trigger_extraction_backfills_project_from_session_cwd(db):
+    """
+    验证 session 缺 project_id 时，会按 cwd 补齐项目归属并写入记忆。
+
+    参数:
+        db: 测试数据库会话，用于准备缺项目归属的 session 和校验回填结果。
+
+    返回值:
+        无返回值；通过断言 session 与记忆共享同一 project_id 验证行为。
+    """
+    session = Session(
+        id="sess-extract-cwd",
+        project_id=None,
+        cwd="/tmp/demo/CodeTogether",
+    )
+    db.add(session)
+    db.add(Message(
+        session_id="sess-extract-cwd",
+        role="assistant",
+        content="后续必须携带 access token，否则会导致接口失败",
+        status="delivered",
+    ))
+    db.commit()
+
+    returned_items = [
+        {"project_id": None, "title": "鉴权约束", "content": "后续必须携带 access token，否则会导致接口失败", "tags": "auth"},
+    ]
+
+    class ImmediateThread:
+        def __init__(self, target=None, daemon=None):
+            self._target = target
+
+        def start(self):
+            if self._target:
+                self._target()
+
+    with mock.patch("server.routers.agents.extract_memories", return_value=returned_items), \
+         mock.patch("server.routers.agents.SessionLocal", return_value=db), \
+         mock.patch("server.routers.agents.threading.Thread", ImmediateThread):
+        _trigger_extraction("sess-extract-cwd", None)
+
+    db.expire_all()
+    saved = db.query(Memory).filter(Memory.source_session_id == "sess-extract-cwd").one()
+    refreshed_session = db.query(Session).filter(Session.id == "sess-extract-cwd").one()
+
+    assert refreshed_session.project_id is not None
+    assert saved.project_id == refreshed_session.project_id
+    assert saved.status == "active"
+
+
+def test_trigger_extraction_prefers_explicit_project_id_over_cwd(db):
+    """
+    验证调用方显式传入 project_id 时，不会被 session.cwd 推导结果覆盖。
+
+    参数:
+        db: 测试数据库会话，用于准备带 cwd 的 session 和校验最终归属。
+
+    返回值:
+        无返回值；通过断言记忆归属优先采用显式 project_id 验证优先级。
+    """
+    session = Session(
+        id="sess-extract-explicit-project",
+        project_id=None,
+        cwd="/tmp/demo/CodeTogether",
+    )
+    db.add(session)
+    db.add(Message(
+        session_id="sess-extract-explicit-project",
+        role="assistant",
+        content="这里必须沿用显式项目归属，否则会导致跨项目串写",
+        status="delivered",
+    ))
+    db.commit()
+
+    returned_items = [
+        {"project_id": None, "title": "项目归属", "content": "这里必须沿用显式项目归属，否则会导致跨项目串写", "tags": "project"},
+    ]
+
+    class ImmediateThread:
+        def __init__(self, target=None, daemon=None):
+            self._target = target
+
+        def start(self):
+            if self._target:
+                self._target()
+
+    with mock.patch("server.routers.agents.extract_memories", return_value=returned_items), \
+         mock.patch("server.routers.agents.SessionLocal", return_value=db), \
+         mock.patch("server.routers.agents.threading.Thread", ImmediateThread):
+        _trigger_extraction("sess-extract-explicit-project", "proj-explicit")
+
+    db.expire_all()
+    saved = db.query(Memory).filter(Memory.source_session_id == "sess-extract-explicit-project").one()
+    refreshed_session = db.query(Session).filter(Session.id == "sess-extract-explicit-project").one()
+
+    assert saved.project_id == "proj-explicit"
+    assert refreshed_session.project_id is None
 
 
 def test_trigger_extraction_prefers_messages_and_limits_saved_memories(db):

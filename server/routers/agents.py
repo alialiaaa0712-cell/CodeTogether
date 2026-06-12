@@ -40,23 +40,21 @@ def _normalize_project_cwd(cwd: str) -> Optional[str]:
     return normalized_cwd
 
 
-def _ensure_project_for_session(body: SessionCreate, db: DBSession) -> Optional[str]:
+def _ensure_project_for_cwd(cwd: Optional[str], db: DBSession) -> Optional[str]:
     """
-    为会话解析并确保 project_id 存在，优先按完整 cwd 路径匹配项目。
+    根据 cwd 解析并确保项目存在，供会话创建和历史补齐链路复用。
 
     参数:
-        body: 创建会话请求体，可能只包含 cwd 而未显式提供 project_id。
+        cwd: 会话工作目录，允许为空。
         db: 数据库会话，用于查询或创建项目记录。
 
     返回值:
         若可确定项目则返回 project_id；否则返回 None。
     """
-    if body.project_id:
-        return body.project_id
-    if not body.cwd:
+    if not cwd:
         return None
 
-    normalized_cwd = _normalize_project_cwd(body.cwd)
+    normalized_cwd = _normalize_project_cwd(cwd)
     if not normalized_cwd:
         return None
 
@@ -72,6 +70,22 @@ def _ensure_project_for_session(body: SessionCreate, db: DBSession) -> Optional[
     db.add(project)
     db.flush()
     return project.id
+
+
+def _ensure_project_for_session(body: SessionCreate, db: DBSession) -> Optional[str]:
+    """
+    为会话解析并确保 project_id 存在，优先按完整 cwd 路径匹配项目。
+
+    参数:
+        body: 创建会话请求体，可能只包含 cwd 而未显式提供 project_id。
+        db: 数据库会话，用于查询或创建项目记录。
+
+    返回值:
+        若可确定项目则返回 project_id；否则返回 None。
+    """
+    if body.project_id:
+        return body.project_id
+    return _ensure_project_for_cwd(body.cwd, db)
 
 
 async def _broadcast_session_update(request: Request, session: SessionModel) -> None:
@@ -118,10 +132,14 @@ async def create_session(body: SessionCreate, request: Request, db: DBSession = 
     """
     existing = db.get(SessionModel, body.id)
     if existing:
+        changed = False
         if body.cwd and not existing.cwd:
             existing.cwd = body.cwd
-            if not existing.project_id:
-                existing.project_id = _ensure_project_for_session(body, db)
+            changed = True
+        if body.cwd and not existing.project_id:
+            existing.project_id = _ensure_project_for_session(body, db)
+            changed = True
+        if changed:
             db.commit()
             db.refresh(existing)
         return existing
@@ -277,7 +295,16 @@ async def delete_session(session_id: str, request: Request, db: DBSession = Depe
 
 
 def _trigger_extraction(session_id: str, project_id: Optional[str]) -> None:
-    """异步触发知识提炼，优先从聊天消息中提炼结论，不阻塞 HTTP 响应。"""
+    """
+    异步触发知识提炼，优先从聊天消息中提炼结论，并直接启用自动提炼出的短期记忆。
+
+    参数:
+        session_id: 触发提炼的会话 ID。
+        project_id: 调用方已知的项目 ID；为空时会回退到 session 自身归属或 cwd 推导结果。
+
+    返回值:
+        无返回值；实际提炼与落库工作在后台线程中完成。
+    """
 
     def _run():
         save_db = SessionLocal()
@@ -309,15 +336,27 @@ def _trigger_extraction(session_id: str, project_id: Optional[str]) -> None:
                 ]
             summary = "\n".join(summary_lines)
 
-            items = extract_memories(summary, project_id=project_id)
+            session = save_db.get(SessionModel, session_id)
+            resolved_project_id = project_id or (session.project_id if session else None)
+            if session and not resolved_project_id:
+                resolved_project_id = _ensure_project_for_cwd(session.cwd, save_db)
+                if resolved_project_id and not session.project_id:
+                    session.project_id = resolved_project_id
+
+            items = extract_memories(summary, project_id=resolved_project_id)
+            now = time.time()
 
             for item in items[:3]:
                 save_db.add(MemoryModel(
-                    project_id=item.get("project_id"),
+                    project_id=resolved_project_id,
                     title=item["title"],
                     content=item["content"],
                     tags=item.get("tags"),
                     source_session_id=session_id,
+                    status="active",
+                    tier="short",
+                    updated_at=now,
+                    activated_at=now,
                 ))
             save_db.commit()
         except Exception as e:

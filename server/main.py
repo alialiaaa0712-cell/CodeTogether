@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 
 import uvicorn
@@ -13,9 +14,12 @@ from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import inspect, text
+from sqlalchemy.orm import sessionmaker
 
 from server.database import Base, SessionLocal, engine, _is_sqlite
+from server.models import Memory as MemoryModel
 from server.models import Message as MessageModel
+from server.models import Session as SessionModel
 from server.routers import agents, chat, events, memory
 from server.services.housekeeping import run_memory_housekeeping
 from server.ws_manager import ConnectionManager
@@ -59,6 +63,7 @@ def _migrate_memories_to_score_fields() -> None:
         "feedback_count": "ALTER TABLE memories ADD COLUMN feedback_count INT NOT NULL DEFAULT 0",
         "last_feedback_at": "ALTER TABLE memories ADD COLUMN last_feedback_at DOUBLE NULL",
         "review_score": "ALTER TABLE memories ADD COLUMN review_score INT NULL",
+        "review_reason": "ALTER TABLE memories ADD COLUMN review_reason VARCHAR(255) NULL",
     }
 
     with engine.connect() as conn:
@@ -83,6 +88,50 @@ def _migrate_memories_to_score_fields() -> None:
                 conn.commit()
 
 
+def _activate_short_pending_memories() -> None:
+    """将历史自动提炼的短期 pending 记忆直接启用，并尽量补齐项目归属。
+
+    参数:
+        无。
+
+    返回值:
+        无；重复执行时仅处理仍为 pending/short 的记录，保持幂等。
+    """
+    db = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
+    try:
+        memories = (
+            db.query(MemoryModel)
+            .filter(
+                MemoryModel.status == "pending",
+                MemoryModel.tier == "short",
+                MemoryModel.source_session_id.isnot(None),
+            )
+            .all()
+        )
+        now = time.time()
+        for memory_row in memories:
+            session = db.get(SessionModel, memory_row.source_session_id)
+            resolved_project_id = memory_row.project_id
+            if session and not resolved_project_id:
+                resolved_project_id = session.project_id
+            if session and not resolved_project_id:
+                resolved_project_id = agents._ensure_project_for_cwd(session.cwd, db)
+                if resolved_project_id and not session.project_id:
+                    session.project_id = resolved_project_id
+
+            memory_row.status = "active"
+            memory_row.project_id = resolved_project_id
+            if not memory_row.activated_at:
+                memory_row.activated_at = now
+            memory_row.updated_at = now
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 def _run_startup_migrations() -> None:
     """在非测试启动路径执行轻量迁移，兼容历史数据库结构。
 
@@ -90,14 +139,13 @@ def _run_startup_migrations() -> None:
         无。
 
     返回值:
-        无；若环境不是 sqlite，则按需补齐兼容列与记忆评分列。
+        无；按需补齐兼容列、记忆评分列，并修复历史短期记忆状态。
     """
     Base.metadata.create_all(bind=engine)
-    if _is_sqlite:
-        return
-
-    _ensure_event_columns()
-    _migrate_memories_to_score_fields()
+    if not _is_sqlite:
+        _ensure_event_columns()
+        _migrate_memories_to_score_fields()
+    _activate_short_pending_memories()
 
 
 if not os.getenv("TESTING"):

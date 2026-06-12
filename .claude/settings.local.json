@@ -44,7 +44,12 @@
       "Bash(pytest -q \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_mcp_server.py\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_codetogether.py\")",
       "Bash(python3 -m py_compile \"/Users/qinepan/Desktop/search/CodeTogether/codetogether.py\" \"/Users/qinepan/Desktop/search/CodeTogether/mcp_server/session_context.py\" \"/Users/qinepan/Desktop/search/CodeTogether/mcp_server/tools.py\" \"/Users/qinepan/Desktop/search/CodeTogether/mcp_server/server.py\")",
       "Bash(python3 \"/Users/qinepan/Desktop/search/CodeTogether/codetogether.py\" init)",
-      "Bash(pytest -q \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_mcp_server.py\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_codetogether.py\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_hooks.py::test_pre_tool_does_not_search_memory_automatically\")"
+      "Bash(pytest -q \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_mcp_server.py\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_codetogether.py\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_hooks.py::test_pre_tool_does_not_search_memory_automatically\")",
+      "Bash(pytest -q \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_main.py::test_migrate_memories_adds_missing_review_reason_column\")",
+      "Bash(pytest -q \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_main.py\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_memory.py::test_feedback_promotes_short_memory_to_review_at_positive_threshold\" \"/Users/qinepan/Desktop/search/CodeTogether/tests/test_housekeeping.py\")",
+      "Bash(lsof -nP -iTCP:7879 -sTCP:LISTEN)",
+      "Bash(curl -sS -D - \"http://127.0.0.1:7879/memory?status=pending\")",
+      "Bash(rg --files \"/Users/qinepan/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills\")"
     ]
   }
 }

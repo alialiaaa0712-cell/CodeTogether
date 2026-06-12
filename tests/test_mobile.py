@@ -86,6 +86,23 @@ def test_mobile_shell_contains_core_views_and_tabs(client):
     assert 'data-tab="memory"' in html
 
 
+
+def test_mobile_shell_contains_redesigned_overview_regions(client):
+    """
+    验证新版移动端骨架包含概览卡与页面说明区域，供重设计后的信息层级使用。
+
+    参数:
+        client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
+
+    返回值:
+        无返回值；断言页面 HTML 中包含新版概览与说明区域的关键标识。
+    """
+    html = client.get("/mobile/index.html").text
+    assert 'id="agent-overview"' in html
+    assert 'class="view-section-head' in html
+    assert 'class="page-note"' not in html
+
+
 def test_mobile_shell_uses_agents_view_as_default_active_tab(client):
     """
     验证移动端页面默认激活 Agent 列表页，并为底部标签声明正确的 data-tab。
@@ -121,6 +138,61 @@ def test_mobile_shell_contains_connection_and_feedback_controls(client):
     assert 'id="memory-filter-pending"' in html
 
 
+
+def test_mobile_memory_shell_contains_review_board_regions(client):
+    """
+    验证记忆页骨架包含审核台头部、筛选摘要、列表容器与抽屉面板，支持更紧凑的审核布局。
+
+    参数:
+        client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
+
+    返回值:
+        无返回值；断言页面 HTML 中包含审核台布局需要的关键区域。
+    """
+    html = client.get("/mobile/index.html").text
+    assert 'class="memory-board-head"' in html
+    assert 'class="memory-board-list"' in html
+    assert 'id="memory-filter-summary" class="filter-summary"' in html
+    assert 'id="memory-filter-open"' in html
+    assert 'id="memory-filter-drawer"' in html
+    assert 'id="memory-filter-apply"' in html
+
+
+
+def test_mobile_shell_removes_extra_page_notes(client):
+    """
+    验证移动端骨架不再输出冗余提示性文案，避免占用首屏空间。
+
+    参数:
+        client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
+
+    返回值:
+        无返回值；断言页面 HTML 中不再包含上一轮加入的说明句子。
+    """
+    html = client.get("/mobile/index.html").text
+    assert "优先看当前在线会话" not in html
+    assert "消息会在下一次工具调用时注入" not in html
+    assert "按项目范围切换" not in html
+
+
+
+def test_mobile_css_contains_compact_section_heading_rules(client):
+    """
+    验证移动端样式包含紧凑标题与审核台布局规则，避免标题过高挤占列表空间。
+
+    参数:
+        client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
+
+    返回值:
+        无返回值；断言样式文本中包含紧凑标题和记忆审核台的关键类名。
+    """
+    css = client.get("/mobile/style.css").text
+    assert ".view-section-head.compact-head" in css
+    assert ".memory-board-head" in css
+    assert ".filter-open-btn" in css
+    assert ".filter-summary" in css
+
+
 def test_mobile_css_contains_mobile_layout_rules(client):
     """
     验证移动端样式文件包含标签栏、视图切换、卡片布局与底部安全区留白规则。
@@ -136,6 +208,21 @@ def test_mobile_css_contains_mobile_layout_rules(client):
     assert ".view.active" in css
     assert ".card" in css
     assert "padding-bottom: calc(72px + env(safe-area-inset-bottom));" in css
+
+
+def test_mobile_html_does_not_contain_duplicate_closing_tags_after_drawer(client):
+    """
+    验证移动端页面在筛选抽屉之后不会出现重复的结构关闭标签，避免浏览器容错解析差异。
+
+    参数:
+        client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
+
+    返回值:
+        无返回值；断言抽屉容器结束后直接进入底部标签栏，而不是再次关闭已结束的 section 或 main。
+    """
+    html = client.get("/mobile/index.html").text
+    assert "</section>\n  </main>\n\n  <nav class=\"tab-bar\">" not in html
+    assert "</div>\n  <nav class=\"tab-bar\">" in html
 
 
 def _receive_ws_message(websocket, timeout=1.0):
@@ -311,6 +398,50 @@ def test_mobile_websocket_broadcasts_parent_update_when_existing_child_gets_pare
         assert event_message["data"]["session_id"] == child_id
 
 
+
+def test_mobile_websocket_event_broadcast_includes_full_child_context(client):
+    """
+    验证子 Agent 工具事件的 WebSocket 广播会带上 parent_session_id、tool_use_id 与输入输出，便于前端实时刷新当前父会话时间线。
+
+    参数:
+        client: FastAPI 测试客户端，用于建立 WebSocket 连接并上报完整工具事件。
+
+    返回值:
+        无返回值；断言 event 广播携带父子关系与工具详情所需字段。
+    """
+    parent_id = f"parent-{uuid.uuid4()}"
+    child_id = f"child-{uuid.uuid4()}"
+    assert client.post("/agents", json={"id": parent_id}).status_code == 200
+    assert client.post("/agents", json={"id": child_id, "parent_id": parent_id}).status_code == 200
+
+    with client.websocket_connect("/ws") as websocket:
+        resp = client.post(
+            "/events",
+            json={
+                "session_id": child_id,
+                "parent_session_id": parent_id,
+                "type": "post_tool",
+                "tool_name": "Bash",
+                "tool_use_id": "toolu_demo",
+                "input": {"command": "ls -la"},
+                "output": "ok",
+                "duration_ms": 12,
+            },
+        )
+        assert resp.status_code == 200
+
+        event_message = _receive_ws_message(websocket)
+        assert event_message["type"] == "event"
+        assert event_message["data"]["session_id"] == child_id
+        assert event_message["data"]["parent_session_id"] == parent_id
+        assert event_message["data"]["type"] == "post_tool"
+        assert event_message["data"]["tool_name"] == "Bash"
+        assert event_message["data"]["tool_use_id"] == "toolu_demo"
+        assert event_message["data"]["input"] == {"command": "ls -la"}
+        assert event_message["data"]["output"] == "ok"
+        assert event_message["data"]["duration_ms"] == 12
+
+
 def test_mobile_chat_script_contains_chat_endpoints(client):
     """
     验证移动端脚本已接入聊天历史与发送消息能力。
@@ -350,6 +481,25 @@ def test_mobile_memory_script_contains_review_actions(client):
     assert 'method: "PATCH"' in js
     assert '记忆已启用' in js
     assert '记忆已删除' in js
+
+
+
+def test_mobile_memory_script_contains_filter_drawer_flow(client):
+    """
+    验证记忆页脚本包含筛选摘要与抽屉式应用流程，而不是直接堆叠多排筛选按钮。
+
+    参数:
+        client: FastAPI 测试客户端，用于向应用发起 HTTP 请求。
+
+    返回值:
+        无返回值；断言脚本中包含筛选摘要和抽屉开关逻辑的关键入口。
+    """
+    js = client.get("/mobile/app.js").text
+    assert 'memoryDrawerOpen: false' in js
+    assert 'draftMemoryFilter' in js
+    assert 'function renderMemoryFilterSummary()' in js
+    assert 'function setMemoryDrawer(open)' in js
+    assert 'id="memory-filter-summary"' not in js
 
 
 def test_mobile_memory_script_shows_score_metrics_instead_of_hit_count(client):
@@ -417,6 +567,175 @@ def test_mobile_memory_script_does_not_render_removed_hit_count(client):
     js = client.get("/mobile/app.js").text
     assert "hit_count_7d" not in js
     assert "7天命中" not in js
+
+
+def test_mobile_chat_script_supports_markdown_and_jump_to_latest(client):
+    """
+    验证聊天页脚本支持 assistant Markdown 渲染，并在用户离开底部后展示跳转到最新消息按钮。
+
+    参数:
+        client: FastAPI 测试客户端，用于读取移动端脚本文本。
+
+    返回值:
+        无返回值；断言脚本中存在 Markdown 渲染入口、跳转按钮状态和手动跳转逻辑。
+    """
+    js = client.get("/mobile/app.js").text
+    assert "function renderMarkdown(" in js
+    assert "item.role === \"assistant\" ? renderMarkdown(item.content) : escapeHtml(item.content)" in js
+    assert "chatShouldAutoScroll" in js
+    assert "showJumpToLatest" in js
+    assert "function jumpToLatestMessage()" in js
+    assert "function isNearChatBottom()" in js
+    assert "dom.chatHistory.addEventListener(\"scroll\"" in js
+
+
+def test_mobile_chat_css_uses_fixed_chat_view_and_inner_scroll(client):
+    """
+    验证聊天页使用固定高度视图和内部滚动容器，避免整页滚动导致自动滚底与跳转按钮失效。
+
+    参数:
+        client: FastAPI 测试客户端，用于读取移动端样式文本。
+
+    返回值:
+        无返回值；断言聊天视图限制高度且历史列表负责滚动。
+    """
+    css = client.get("/mobile/style.css").text
+    assert "#view-chat {" in css
+    assert "min-height: calc(100dvh - 86px - 84px - env(safe-area-inset-bottom));" not in css
+    assert "height: calc(100dvh - 86px - 84px - env(safe-area-inset-bottom));" in css
+    assert "#view-chat.active {" in css
+    assert "overflow: hidden;" in css
+    assert ".chat-history {" in css
+    assert "overflow-y: auto;" in css
+
+
+def test_mobile_chat_html_contains_jump_to_latest_button(client):
+    """
+    验证聊天页骨架包含跳转到最新消息按钮，供新消息到达且用户未停留在底部时使用。
+
+    参数:
+        client: FastAPI 测试客户端，用于读取移动端首页 HTML。
+
+    返回值:
+        无返回值；断言页面中存在聊天跳转按钮容器。
+    """
+    html = client.get("/mobile/index.html").text
+    assert 'id="chat-jump-latest"' in html
+
+
+def test_mobile_chat_script_keeps_tool_call_timeline_rendering(client):
+    """
+    验证聊天脚本仍会把工具调用事件渲染进时间线，而不是只显示用户和助手消息。
+
+    参数:
+        client: FastAPI 测试客户端，用于读取移动端脚本文本。
+
+    返回值:
+        无返回值；断言事件分支仍生成 tool-call 结构，并保留 child-agent 徽章与工具输入输出折叠区。
+    """
+    js = client.get("/mobile/app.js").text
+    assert 'if (item._type === "event") {' in js
+    assert 'tool-call${isChild ? " child-agent" : ""}' in js
+    assert 'child-agent-badge' in js
+    assert 'class="tool-io-block"' in js
+
+
+
+def test_mobile_chat_script_preserves_tool_call_and_unmatched_post_events(client):
+    """
+    验证聊天脚本不会丢掉 tool_call 事件或未配对到 pre_tool 的 post_tool 事件，避免工具时间线静默缺失。
+
+    参数:
+        client: FastAPI 测试客户端，用于读取移动端脚本文本。
+
+    返回值:
+        无返回值；断言脚本会显式处理 tool_call，并保留未匹配 post_tool 的兜底分支。
+    """
+    js = client.get("/mobile/app.js").text
+    assert 'e.type === "tool_call"' in js
+    assert 'paired.push({ ...e, done: true })' in js
+
+
+
+def test_mobile_chat_script_keeps_tool_details_visible_by_default(client):
+    """
+    验证聊天页工具详情默认可见，而不是依赖 details 折叠后才看得到输入输出。
+
+    参数:
+        client: FastAPI 测试客户端，用于读取移动端脚本文本。
+
+    返回值:
+        无返回值；断言工具详情使用默认展开的可见容器，而不是 details 标签。
+    """
+    js = client.get("/mobile/app.js").text
+    assert '<details class="tool-io">' not in js
+    assert 'class="tool-io-block"' in js
+
+
+
+def test_mobile_chat_script_keeps_read_tool_input_visible(client):
+    """
+    验证 Read 工具卡片不会只剩一行标题，而会默认展示输入内容，避免用户误以为工具信息消失。
+
+    参数:
+        client: FastAPI 测试客户端，用于读取移动端脚本文本。
+
+    返回值:
+        无返回值；断言 Read/Write 分支会构造 IN 展示块。
+    """
+    js = client.get("/mobile/app.js").text
+    assert 'if (tool === "Read" || tool === "Write") {' in js
+    assert 'const inBlock = inp.file_path ? `<div class="tool-io-block"><div class="tool-io-label">IN</div><pre class="tool-detail">${escapeHtml(inp.file_path)}</pre></div>` : "";' in js
+
+
+def test_mobile_chat_css_avoids_horizontal_scroll_for_messages(client):
+    """
+    验证消息区不通过横向滚动展示内容，代码块与工具详情都应在窄屏内换行或裁切。
+
+    参数:
+        client: FastAPI 测试客户端，用于读取移动端样式文本。
+
+    返回值:
+        无返回值；断言消息区没有横向滚动设置，且代码块与详情文本使用换行策略。
+    """
+    css = client.get("/mobile/style.css").text
+    assert "overflow-x: auto;" not in css
+    assert ".bubble-content .md-code {" in css
+    assert "overflow-x: hidden;" in css
+    assert ".tool-detail {" in css
+    assert "word-break: break-word;" in css
+
+
+def test_mobile_memory_html_uses_single_filter_entry(client):
+    """
+    验证记忆页只保留一个筛选入口，避免摘要区与筛选按钮重复打开同一个抽屉。
+
+    参数:
+        client: FastAPI 测试客户端，用于读取移动端首页 HTML。
+
+    返回值:
+        无返回值；断言保留筛选按钮，摘要区仅作静态展示而不是第二个 button。
+    """
+    html = client.get("/mobile/index.html").text
+    assert 'id="memory-filter-open"' in html
+    assert 'id="memory-filter-summary" class="filter-summary"' in html
+    assert '<button id="memory-filter-summary"' not in html
+
+
+def test_mobile_html_uses_versioned_asset_urls(client):
+    """
+    验证移动端页面为静态脚本和样式附带版本参数，避免手机浏览器继续复用旧缓存导致前端修复不生效。
+
+    参数:
+        client: FastAPI 测试客户端，用于读取移动端首页 HTML。
+
+    返回值:
+        无返回值；断言样式与脚本引用都带版本查询参数。
+    """
+    html = client.get("/mobile/index.html").text
+    assert 'href="style.css?v=' in html
+    assert 'src="app.js?v=' in html
+
 
 
 def test_readme_mentions_mobile_entry():

@@ -89,6 +89,23 @@ def test_require_session_id_raises_without_any_source(monkeypatch):
         m.require_session_id()
 
 
+def test_require_session_id_reads_claude_code_session_id(monkeypatch):
+    """
+    验证 CLAUDE_CODE_SESSION_ID 环境变量（VSCode extension 注入）也能被读取为 session_id。
+
+    参数:
+        monkeypatch: pytest 提供的环境变量补丁工具。
+
+    返回值:
+        无返回值；通过断言返回值等于环境变量值来验证行为。
+    """
+    monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "vscode-session-abc")
+    m = import_session_context()
+
+    assert m.require_session_id() == "vscode-session-abc"
+
+
 
 def test_memory_search_tool_passes_query_limit_and_session(monkeypatch):
     """
@@ -159,3 +176,25 @@ def test_memory_search_tool_wraps_backend_error(monkeypatch):
          mock.patch("mcp_server.tools.search_memories", side_effect=RuntimeError("boom")):
         with pytest.raises(RuntimeError, match="记忆搜索失败"):
             m.memory_search_tool("mysql ddl")
+
+
+
+def test_build_server_exposes_memory_search_description():
+    """
+    验证 MCP 暴露的 memory_search 工具说明会明确引导先查项目规则、约束与历史坑点。
+
+    参数:
+        无。
+
+    返回值:
+        无返回值；通过断言工具说明文本包含关键引导语来验证行为。
+    """
+    from mcp_server.server import build_server
+
+    server = build_server()
+    tools = server._tool_manager.list_tools()
+    memory_search_tool = next(tool for tool in tools if tool.name == "memory_search")
+
+    assert "先查" in memory_search_tool.description
+    assert "项目规则" in memory_search_tool.description
+    assert "历史坑点" in memory_search_tool.description

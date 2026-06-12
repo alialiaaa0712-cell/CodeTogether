@@ -60,6 +60,32 @@ def test_activate_memory(client):
     assert resp.json()["status"] == "active"
 
 
+def test_manual_post_memory_keeps_pending_after_startup_auto_activation(client):
+    """验证手工创建记忆仍保持 pending，未被自动提炼启用逻辑改写。"""
+    resp = client.post("/memory", json={
+        "title": "手工记忆",
+        "content": "这条记忆由人工创建，仍应保持 pending",
+    })
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pending"
+    assert resp.json()["source_session_id"] is None
+
+
+def test_manual_patch_activate_memory_sets_activated_at(client):
+    """验证手工 pending->active 流转仍会写入 activated_at。"""
+    created = client.post("/memory", json={
+        "title": "手工激活",
+        "content": "这条记忆通过人工确认启用",
+    }).json()
+
+    updated = client.patch(f"/memory/{created['id']}", json={"status": "active"})
+
+    assert updated.status_code == 200
+    assert updated.json()["status"] == "active"
+    assert updated.json()["activated_at"] is not None
+
+
 def test_get_memory_search_is_unavailable(client):
     """验证 GET /memory/search 已下线，避免继续暴露旧搜索入口。
 
