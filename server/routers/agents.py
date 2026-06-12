@@ -90,7 +90,9 @@ def _ensure_project_for_repo_url(repo_url: str, db: DBSession) -> Optional[str]:
     if existing:
         return existing.id
     # 取 URL 最后一段作为项目名，去掉 .git 后缀
-    name = PurePath(repo_url.rstrip("/").rstrip(".git")).name or repo_url
+    stem = PurePath(repo_url.rstrip("/")).name
+    name = stem[:-4] if stem.endswith(".git") else stem
+    name = name or repo_url
     project = ProjectModel(name=name, repo_url=repo_url)
     db.add(project)
     db.flush()
