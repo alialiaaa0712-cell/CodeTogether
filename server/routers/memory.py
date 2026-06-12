@@ -102,7 +102,7 @@ def _query_memories(
     return (
         memory_query
         .filter(or_(*token_filters))
-        .order_by(MemoryModel.updated_at.desc(), MemoryModel.created_at.desc())
+        .order_by(MemoryModel.score_total.desc(), MemoryModel.feedback_count.desc(), MemoryModel.updated_at.desc())
         .limit(limit)
         .all()
     )

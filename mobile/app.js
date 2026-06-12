@@ -2,6 +2,28 @@ const SERVER = location.origin;
 const WS_PROTOCOL = location.protocol === "https:" ? "wss:" : "ws:";
 const WS_URL = `${WS_PROTOCOL}//${location.host}/ws`;
 
+const _LS_KEY = "ct_ui_state";
+
+function saveUiState() {
+  try {
+    localStorage.setItem(_LS_KEY, JSON.stringify({
+      activeTab: state.activeTab,
+      selectedSessionId: state.selectedSessionId,
+      inChat: state.inChat,
+      memoryFilter: state.memoryFilter,
+      memoryScope: state.memoryScope,
+      tierFilter: state.tierFilter,
+      memorySort: state.memorySort,
+    }));
+  } catch (_) {}
+}
+
+function loadUiState() {
+  try {
+    return JSON.parse(localStorage.getItem(_LS_KEY) || "{}");
+  } catch (_) { return {}; }
+}
+
 const state = {
   activeTab: "agents",
   reconnectDelay: 1000,
@@ -13,10 +35,12 @@ const state = {
   memoryFilter: "pending",
   memoryScope: "current",
   tierFilter: "all",
-  memoryDrawerOpen: false,
+  memorySort: "time",
+  draftMemorySort: "time",
   draftMemoryFilter: "pending",
   draftMemoryScope: "current",
   draftTierFilter: "all",
+  memoryDrawerOpen: false,
   inChat: false,
   chatPollTimer: null,
   chatShouldAutoScroll: true,
@@ -51,6 +75,9 @@ const dom = {
   memoryTierDrawerGroup: document.getElementById("memory-tier-drawer-group"),
   memoryTierFilter: document.getElementById("memory-tier-filter"),
   memoryFilterPending: document.getElementById("memory-filter-pending"),
+  memorySortTime: document.getElementById("memory-sort-time"),
+  memorySortScore: document.getElementById("memory-sort-score"),
+  memorySortFeedback: document.getElementById("memory-sort-feedback"),
   memoryFilterReview: document.getElementById("memory-filter-review"),
   memoryFilterActive: document.getElementById("memory-filter-active"),
   memoryScopeCurrent: document.getElementById("memory-scope-current"),
@@ -234,6 +261,7 @@ function openChat(sessionId) {
   state.inChat = true;
   state.chatShouldAutoScroll = true;
   state.showJumpToLatest = false;
+  saveUiState();
 
   const session = state.sessions.find((s) => s.id === sessionId);
   dom.chatAgentInfo.innerHTML = session
@@ -287,6 +315,7 @@ function switchTab(tab) {
   Object.entries(dom.views).forEach(([name, node]) => {
     node.classList.toggle("active", name === tab);
   });
+  saveUiState();
   if (tab === "memory") {
     loadMemories().catch((e) => {
       console.error("加载记忆列表失败", e);
@@ -431,7 +460,8 @@ function renderMemoryFilterSummary() {
     long: "长期",
     short: "短期",
   };
-  const parts = [`范围：${scopeLabel}`, `状态：${statusMap[state.memoryFilter] || state.memoryFilter}`];
+  const sortMap = { time: "最新", score: "评分", feedback: "反馈次数" };
+  const parts = [`范围：${scopeLabel}`, `状态：${statusMap[state.memoryFilter] || state.memoryFilter}`, `排序：${sortMap[state.memorySort] || state.memorySort}`];
   if (state.memoryFilter === "active") {
     parts.push(`类型：${tierMap[state.tierFilter] || state.tierFilter}`);
   }
@@ -447,6 +477,9 @@ function updateMemoryDrawerControls() {
   dom.memoryFilterActive.classList.toggle("active", state.draftMemoryFilter === "active");
   dom.memoryScopeCurrent.classList.toggle("active", state.draftMemoryScope === "current");
   dom.memoryScopeAll.classList.toggle("active", state.draftMemoryScope === "all");
+  dom.memorySortTime.classList.toggle("active", state.draftMemorySort === "time");
+  dom.memorySortScore.classList.toggle("active", state.draftMemorySort === "score");
+  dom.memorySortFeedback.classList.toggle("active", state.draftMemorySort === "feedback");
 
   const showTier = state.draftMemoryFilter === "active";
   dom.memoryTierDrawerGroup.style.display = showTier ? "block" : "none";
@@ -474,6 +507,7 @@ function setMemoryDrawer(open) {
     state.draftMemoryFilter = state.memoryFilter;
     state.draftMemoryScope = state.memoryScope;
     state.draftTierFilter = state.tierFilter;
+    state.draftMemorySort = state.memorySort;
     updateMemoryDrawerControls();
   }
 }
@@ -656,6 +690,12 @@ async function loadMemories() {
     url += `&tier=${encodeURIComponent(state.tierFilter)}`;
   }
   state.memories = await fetchJson(url);
+  const sortFns = {
+    time: (a, b) => (b.updated_at || b.created_at) - (a.updated_at || a.created_at),
+    score: (a, b) => (b.score_total ?? 0) - (a.score_total ?? 0),
+    feedback: (a, b) => (b.feedback_count ?? 0) - (a.feedback_count ?? 0),
+  };
+  state.memories.sort(sortFns[state.memorySort] || sortFns.time);
   renderMemories();
 }
 
@@ -738,8 +778,26 @@ function connectWebSocket() {
 
 async function init() {
   setConnectionStatus(false);
+
+  const saved = loadUiState();
+  if (saved.memoryFilter) state.memoryFilter = saved.memoryFilter;
+  if (saved.memoryScope) state.memoryScope = saved.memoryScope;
+  if (saved.tierFilter) state.tierFilter = saved.tierFilter;
+  if (saved.memorySort) state.memorySort = saved.memorySort;
+  state.draftMemoryFilter = state.memoryFilter;
+  state.draftMemoryScope = state.memoryScope;
+  state.draftTierFilter = state.tierFilter;
+  state.draftMemorySort = state.memorySort;
+
   renderMemoryFilterSummary();
   await loadStatusData();
+
+  if (saved.inChat && saved.selectedSessionId) {
+    openChat(saved.selectedSessionId);
+  } else if (saved.activeTab && saved.activeTab !== "agents") {
+    switchTab(saved.activeTab);
+  }
+
   await loadMemories();
   connectWebSocket();
 }
@@ -789,16 +847,23 @@ dom.memoryFilterReset.addEventListener("click", () => {
   state.draftMemoryScope = "current";
   state.draftMemoryFilter = "pending";
   state.draftTierFilter = "all";
+  state.draftMemorySort = "time";
   updateMemoryDrawerControls();
 });
 dom.memoryFilterApply.addEventListener("click", () => {
   state.memoryScope = state.draftMemoryScope;
   state.memoryFilter = state.draftMemoryFilter;
   state.tierFilter = state.draftMemoryFilter === "active" ? state.draftTierFilter : "all";
+  state.memorySort = state.draftMemorySort;
   renderMemoryFilterSummary();
   setMemoryDrawer(false);
+  saveUiState();
   loadMemories().catch(() => {});
 });
+
+dom.memorySortTime.addEventListener("click", () => { state.draftMemorySort = "time"; updateMemoryDrawerControls(); });
+dom.memorySortScore.addEventListener("click", () => { state.draftMemorySort = "score"; updateMemoryDrawerControls(); });
+dom.memorySortFeedback.addEventListener("click", () => { state.draftMemorySort = "feedback"; updateMemoryDrawerControls(); });
 
 init().catch((e) => {
   console.error("初始化失败", e);

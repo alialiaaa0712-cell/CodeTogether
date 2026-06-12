@@ -26,7 +26,7 @@ def build_server():
 
     server = FastMCP("codetogether-memory")
 
-    @server.tool(description="在实现、改动或排障前，先查当前项目的相关记忆，优先获取项目规则、边界约束和历史坑点。")
+    @server.tool(description="在实现、改动或排障前，先查当前项目的相关记忆，优先获取项目规则、边界约束和历史坑点。调用时必须将环境变量 CLAUDE_CODE_SESSION_ID 的值作为 session_id 参数传入。")
     def memory_search(query: str, limit: int = 3, session_id: Optional[str] = None) -> dict:
         """
         搜索当前项目下与关键词相关的记忆条目。

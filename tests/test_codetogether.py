@@ -46,6 +46,30 @@ def test_register_mcp_server_writes_claude_json(monkeypatch, tmp_path):
     assert server["env"]["CODETOGETHER_SERVER"] == "http://127.0.0.1:7879"
 
 
+def test_register_mcp_server_injects_session_id_from_env(monkeypatch, tmp_path):
+    """
+    验证当前进程存在 CLAUDE_CODE_SESSION_ID 时，注册会把它写入 MCP server env，
+    使 MCP 子进程能直接读到 session_id 而无需显式传参。
+
+    参数:
+        monkeypatch: pytest 提供的补丁工具。
+        tmp_path: pytest 提供的临时目录。
+
+    返回值:
+        无返回值；通过断言 env 中存在 CLAUDE_SESSION_ID 来验证注入逻辑。
+    """
+    claude_json = tmp_path / ".claude.json"
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "test-session-xyz")
+    m = import_codetogether()
+    monkeypatch.setattr(m, "CLAUDE_CONFIG_PATH", claude_json)
+
+    m._register_mcp_server()
+
+    data = json.loads(claude_json.read_text())
+    server = data["mcpServers"]["codetogether-memory"]
+    assert server["env"].get("CLAUDE_SESSION_ID") == "test-session-xyz"
+
+
 
 def test_register_mcp_server_is_idempotent(monkeypatch, tmp_path):
     """

@@ -340,6 +340,43 @@ def test_list_memories_filters_by_tier(client):
     assert all(r["id"] != long_id for r in long_list.json())
 
 
+def test_search_orders_by_score_total_then_feedback_count_then_updated_at(client, db):
+    """验证搜索结果按 score_total desc, feedback_count desc, updated_at desc 排序。"""
+    import time
+    from server.models import Memory as MemoryModel
+
+    session = client.post("/agents", json={"id": "sess-sort-order", "cwd": "/tmp/sort-order"}).json()
+    project_id = session["project_id"]
+
+    def make_mem(title):
+        resp = client.post("/memory", json={"project_id": project_id, "title": title, "content": "数据库排序测试"}).json()
+        client.patch(f"/memory/{resp['id']}", json={"status": "active"})
+        return resp["id"]
+
+    low_id = make_mem("低分记忆")
+    mid_id = make_mem("中分记忆")
+    high_id = make_mem("高分记忆")
+
+    # 给高分记忆设置最旧的 updated_at，确保旧排序（只按 updated_at）会把它排最后
+    # 新排序（score_total desc first）应把高分记忆排最前
+    now = time.time()
+    for mid, score, fc, ts in [
+        (low_id, 0, 1, now),
+        (mid_id, 1, 2, now - 10),
+        (high_id, 3, 5, now - 100),
+    ]:
+        row = db.get(MemoryModel, mid)
+        row.score_total = score
+        row.feedback_count = fc
+        row.updated_at = ts
+        db.commit()
+
+    resp = client.post("/memory/search", json={"query": "数据库排序测试", "session_id": "sess-sort-order", "limit": 10})
+    assert resp.status_code == 200
+    ids = [r["id"] for r in resp.json()]
+    assert ids.index(high_id) < ids.index(mid_id) < ids.index(low_id)
+
+
 def test_delete_memory_removes_pending_item(client):
     """验证 DELETE /memory/{id} 仍可删除 pending 记忆。
 
