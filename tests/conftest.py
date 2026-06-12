@@ -46,3 +46,10 @@ def client(engine):
     app.dependency_overrides[get_current_key] = lambda: None
     return TestClient(app)
 
+
+@pytest.fixture
+def auth_headers():
+    """返回空认证头，测试中已通过 dependency_overrides 跳过 auth 验证。"""
+    return {}
+
+

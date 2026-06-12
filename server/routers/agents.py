@@ -74,19 +74,44 @@ def _ensure_project_for_cwd(cwd: Optional[str], db: DBSession) -> Optional[str]:
     return project.id
 
 
-def _ensure_project_for_session(body: SessionCreate, db: DBSession) -> Optional[str]:
+def _ensure_project_for_repo_url(repo_url: str, db: DBSession) -> Optional[str]:
     """
-    为会话解析并确保 project_id 存在，优先按完整 cwd 路径匹配项目。
+    按 git remote URL 精确匹配项目，未命中时自动创建。
 
     参数:
-        body: 创建会话请求体，可能只包含 cwd 而未显式提供 project_id。
-        db: 数据库会话，用于查询或创建项目记录。
+        repo_url: git remote origin URL，作为全局唯一项目键。
+        db: 数据库会话。
 
     返回值:
-        若可确定项目则返回 project_id；否则返回 None。
+        project_id 字符串。
+    """
+    repo_url = repo_url.strip()
+    existing = db.query(ProjectModel).filter(ProjectModel.repo_url == repo_url).first()
+    if existing:
+        return existing.id
+    # 取 URL 最后一段作为项目名，去掉 .git 后缀
+    name = PurePath(repo_url.rstrip("/").rstrip(".git")).name or repo_url
+    project = ProjectModel(name=name, repo_url=repo_url)
+    db.add(project)
+    db.flush()
+    return project.id
+
+
+def _ensure_project_for_session(body: SessionCreate, db: DBSession) -> Optional[str]:
+    """
+    为会话解析 project_id：优先按 repo_url 精确匹配，无则按 cwd 回退。
+
+    参数:
+        body: 创建会话请求体。
+        db: 数据库会话。
+
+    返回值:
+        project_id 字符串，或 None。
     """
     if body.project_id:
         return body.project_id
+    if body.repo_url:
+        return _ensure_project_for_repo_url(body.repo_url, db)
     return _ensure_project_for_cwd(body.cwd, db)
 
 
