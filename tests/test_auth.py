@@ -85,3 +85,31 @@ def test_non_admin_cannot_create_key(client_no_auth):
         headers={"Authorization": f"Bearer {plain}"},
     )
     assert resp.status_code == 403
+
+
+def test_invalid_key_returns_401(client_no_auth):
+    """不存在于数据库的 key 应返回 401。"""
+    resp = client_no_auth.post("/events", json={
+        "session_id": "s1", "type": "pre_tool"
+    }, headers={"Authorization": "Bearer ct-nonexistent000000000000000000000000000000000000000000000000000000"})
+    assert resp.status_code == 401
+
+
+def test_revoked_key_returns_401(client_no_auth):
+    """已吊销（is_active=0）的 key 应返回 401。"""
+    import hashlib
+    from server.database import get_db
+    from server.models import ApiKey
+
+    plain = "ct-revokedkey000000000000000000000000000000000000000000000000000000"
+    key_hash = hashlib.sha256(plain.encode()).hexdigest()
+
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    db.add(ApiKey(key_hash=key_hash, label="revoked", is_admin=0, is_active=0))
+    db.commit()
+
+    resp = client_no_auth.post("/events", json={
+        "session_id": "s1", "type": "pre_tool"
+    }, headers={"Authorization": f"Bearer {plain}"})
+    assert resp.status_code == 401

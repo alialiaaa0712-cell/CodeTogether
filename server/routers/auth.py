@@ -7,7 +7,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session as DBSession
-from typing import List
+from typing import List, Optional
 
 from server.database import get_db
 from server.models import ApiKey
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 _bearer = HTTPBearer(auto_error=False)
 
+# 不需要认证的路径：健康检查、WebSocket 握手、移动端静态资源
 _EXEMPT_PATHS = {"/", "/ws"}
 _EXEMPT_PREFIXES = ("/mobile",)
 
@@ -46,7 +47,7 @@ def get_current_key(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: DBSession = Depends(get_db),
-) -> ApiKey:
+) -> Optional[ApiKey]:
     """
     验证请求的 Bearer Token，返回对应的 ApiKey 记录。
 
@@ -60,7 +61,7 @@ def get_current_key(
     """
     path = request.url.path
     if path in _EXEMPT_PATHS or any(path.startswith(p) for p in _EXEMPT_PREFIXES):
-        return None  # type: ignore
+        return None
 
     if not credentials:
         raise HTTPException(status_code=401, detail="missing api key")
@@ -172,7 +173,7 @@ def seed_admin_key(db: DBSession) -> None:
     plain = os.getenv("ADMIN_KEY")
     if not plain:
         return
-    if db.query(ApiKey).count() > 0:
+    if db.query(ApiKey).filter(ApiKey.key_hash == _hash_key(plain)).first():
         return
     db.add(ApiKey(
         key_hash=_hash_key(plain),
