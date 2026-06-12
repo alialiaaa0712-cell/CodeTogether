@@ -208,7 +208,8 @@ def sync_messages(session_id: str, cwd: str) -> None:
         _save_sync_offset(session_id, end_offset)
         return
 
-    _common.ensure_session(session_id, cwd=cwd)
+    repo_url = _common.get_repo_url(cwd)
+    _common.ensure_session(session_id, cwd=cwd, repo_url=repo_url)
     for msg in messages:
         ts = None
         if msg.get("timestamp"):

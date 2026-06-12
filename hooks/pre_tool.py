@@ -33,7 +33,8 @@ def main():
     cwd = data.get("cwd") or ""
     tool_name = data.get("tool_name") or ""
 
-    _common.ensure_session(agent_session_id, cwd=cwd)
+    repo_url = _common.get_repo_url(cwd)
+    _common.ensure_session(agent_session_id, cwd=cwd, repo_url=repo_url)
     if agent_session_id:
         sync_messages(agent_session_id, cwd)
 

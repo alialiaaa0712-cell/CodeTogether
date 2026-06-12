@@ -4,7 +4,20 @@ import os
 import urllib.request
 
 SERVER = os.environ.get("CODETOGETHER_SERVER", "http://localhost:8000")
+API_KEY = os.environ.get("CODETOGETHER_API_KEY", "")
 TIMEOUT = 2
+
+
+def _auth_headers() -> dict:
+    """
+    返回包含 Content-Type 和 Authorization 的请求头。
+
+    返回值:
+        dict：有 API_KEY 时包含 Bearer Token；无 key 时仅有 Content-Type。
+    """
+    if API_KEY:
+        return {"Content-Type": "application/json", "Authorization": f"Bearer {API_KEY}"}
+    return {"Content-Type": "application/json"}
 
 
 def get_session_id() -> str:
@@ -31,7 +44,7 @@ def post_event(payload: dict) -> None:
         req = urllib.request.Request(
             f"{SERVER}/events",
             data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=_auth_headers(),
             method="POST",
         )
         urllib.request.urlopen(req, timeout=TIMEOUT)
@@ -50,8 +63,10 @@ def poll_messages(session_id: str) -> list:
         list: MessageOut 字典列表
     """
     try:
+        headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
         req = urllib.request.Request(
             f"{SERVER}/chat/{session_id}/poll",
+            headers=headers,
             method="GET",
         )
         resp = urllib.request.urlopen(req, timeout=TIMEOUT)
@@ -80,7 +95,7 @@ def memory_search(query: str, session_id: str, limit: int = 3) -> list:
                 "session_id": session_id,
                 "limit": limit,
             }).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=_auth_headers(),
             method="POST",
         )
         resp = urllib.request.urlopen(req, timeout=TIMEOUT)
@@ -110,7 +125,7 @@ def memory_feedback(memory_id: str, session_id: str, score: int, reason: str):
                 "score": score,
                 "reason": reason,
             }).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=_auth_headers(),
             method="POST",
         )
         resp = urllib.request.urlopen(req, timeout=TIMEOUT)
@@ -119,22 +134,25 @@ def memory_feedback(memory_id: str, session_id: str, score: int, reason: str):
         return None
 
 
-def ensure_session(session_id: str, cwd: str = None) -> None:
+def ensure_session(session_id: str, cwd: str = None, repo_url: str = None) -> None:
     """
     确保 session 存在，不存在时静默创建，避免写消息时因 session 缺失而 404。
 
     参数:
         session_id: 目标会话 ID
         cwd: 工作目录（可选）
+        repo_url: git remote origin URL（可选）
     """
     try:
         payload: dict = {"id": session_id}
         if cwd:
             payload["cwd"] = cwd
+        if repo_url:
+            payload["repo_url"] = repo_url
         req = urllib.request.Request(
             f"{SERVER}/agents",
             data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=_auth_headers(),
             method="POST",
         )
         urllib.request.urlopen(req, timeout=TIMEOUT)
@@ -162,7 +180,7 @@ def post_chat_message(session_id: str, content: str, role: str = "user", source_
         req = urllib.request.Request(
             f"{SERVER}/chat",
             data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=_auth_headers(),
             method="POST",
         )
         urllib.request.urlopen(req, timeout=TIMEOUT)
@@ -181,7 +199,7 @@ def mark_stopped(session_id: str) -> None:
         req = urllib.request.Request(
             f"{SERVER}/agents/{session_id}/status",
             data=json.dumps({"status": "stopped"}).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=_auth_headers(),
             method="PATCH",
         )
         urllib.request.urlopen(req, timeout=TIMEOUT)
@@ -189,3 +207,24 @@ def mark_stopped(session_id: str) -> None:
         pass
 
 
+def get_repo_url(cwd: str) -> str:
+    """
+    获取指定目录的 git remote origin URL。
+
+    参数:
+        cwd: 工作目录路径。
+
+    返回值:
+        remote URL 字符串；非 git 目录或命令失败时返回空字符串。
+    """
+    import subprocess
+    if not cwd:
+        return ""
+    try:
+        result = subprocess.run(
+            ["git", "-C", cwd, "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=2,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
