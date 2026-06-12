@@ -1,6 +1,7 @@
 """hooks 共用的 HTTP 工具函数。"""
 import json
 import os
+import subprocess
 import urllib.request
 
 SERVER = os.environ.get("CODETOGETHER_SERVER", "http://localhost:8000")
@@ -63,10 +64,9 @@ def poll_messages(session_id: str) -> list:
         list: MessageOut 字典列表
     """
     try:
-        headers = {"Authorization": f"Bearer {API_KEY}"} if API_KEY else {}
         req = urllib.request.Request(
             f"{SERVER}/chat/{session_id}/poll",
-            headers=headers,
+            headers=_auth_headers(),
             method="GET",
         )
         resp = urllib.request.urlopen(req, timeout=TIMEOUT)
@@ -217,7 +217,6 @@ def get_repo_url(cwd: str) -> str:
     返回值:
         remote URL 字符串；非 git 目录或命令失败时返回空字符串。
     """
-    import subprocess
     if not cwd:
         return ""
     try:
