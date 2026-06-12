@@ -49,6 +49,24 @@ def _ensure_event_columns() -> None:
             conn.commit()
 
 
+def _ensure_auth_columns() -> None:
+    """
+    补齐 sessions 表的 user_label 列；对旧实例做兼容迁移。
+
+    参数:
+        无。
+
+    返回值:
+        无；若检测到列缺失，执行一次 ALTER TABLE。
+    """
+    inspector = inspect(engine)
+    session_cols = {c["name"] for c in inspector.get_columns("sessions")}
+    if "user_label" not in session_cols:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE sessions ADD COLUMN user_label VARCHAR(128)"))
+            conn.commit()
+
+
 def _migrate_memories_to_score_fields() -> None:
     """为旧 hit-based memories 表执行一次性迁移。
 
@@ -145,6 +163,7 @@ def _run_startup_migrations() -> None:
     Base.metadata.create_all(bind=engine)
     if not _is_sqlite:
         _ensure_event_columns()
+        _ensure_auth_columns()
         _migrate_memories_to_score_fields()
     _activate_short_pending_memories()
     db = SessionLocal()
