@@ -45,6 +45,7 @@ class Session(Base):
     cwd = Column(String(512))
     model = Column(String(128))
     notes = Column(Text)
+    user_label = Column(String(128), nullable=True)
     started_at = Column(Double, default=time.time)
     ended_at = Column(Double)
 
@@ -171,3 +172,15 @@ class MemorySearchExposure(Base):
         Index("ix_memory_search_exposures_exposed_at", "exposed_at"),
         Index("ix_memory_search_exposures_memory_session", "memory_id", "session_id"),
     )
+
+
+class ApiKey(Base):
+    """API Key 表：存储团队成员认证凭证的哈希值。"""
+    __tablename__ = "api_keys"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    key_hash = Column(String(64), nullable=False, unique=True)
+    label = Column(String(128), nullable=False)
+    is_admin = Column(Integer, nullable=False, default=0)
+    is_active = Column(Integer, nullable=False, default=1)
+    created_at = Column(Double, default=time.time)

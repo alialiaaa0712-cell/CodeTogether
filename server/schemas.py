@@ -11,6 +11,7 @@ class SessionCreate(BaseModel):
     parent_id: Optional[str] = None
     cwd: Optional[str] = None
     model: Optional[str] = None
+    repo_url: Optional[str] = None
 
 
 class SessionOut(BaseModel):
@@ -23,6 +24,7 @@ class SessionOut(BaseModel):
     notes: Optional[str] = None
     started_at: float
     ended_at: Optional[float] = None
+    user_label: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -136,3 +138,27 @@ class MemoryOut(BaseModel):
 class MemoryUpdate(BaseModel):
     status: Optional[Literal["active", "rejected", "review"]] = None
     tier: Optional[Literal["short", "long"]] = None
+
+
+class ApiKeyCreate(BaseModel):
+    label: str
+    is_admin: bool = False
+
+
+class ApiKeyOut(BaseModel):
+    id: str
+    label: str
+    is_admin: bool
+    is_active: bool
+    created_at: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_bools(cls, data: Any) -> Any:
+        """SQLite 将 BOOL 存为 0/1 整数，统一转为 Python bool。"""
+        if hasattr(data, "is_admin"):
+            object.__setattr__(data, "is_admin", bool(data.is_admin))
+            object.__setattr__(data, "is_active", bool(data.is_active))
+        return data

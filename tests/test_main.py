@@ -86,6 +86,7 @@ def test_activate_short_pending_memories_backfills_project_id(monkeypatch, tmp_p
                 cwd VARCHAR(512),
                 model VARCHAR(128),
                 notes TEXT,
+                user_label VARCHAR(128) NULL,
                 started_at DOUBLE,
                 ended_at DOUBLE NULL
             )
@@ -172,6 +173,7 @@ def test_activate_short_pending_memories_keeps_active_without_project_when_sessi
                 cwd VARCHAR(512),
                 model VARCHAR(128),
                 notes TEXT,
+                user_label VARCHAR(128) NULL,
                 started_at DOUBLE,
                 ended_at DOUBLE NULL
             )
@@ -255,6 +257,7 @@ def test_activate_short_pending_memories_is_idempotent(monkeypatch, tmp_path):
                 cwd VARCHAR(512),
                 model VARCHAR(128),
                 notes TEXT,
+                user_label VARCHAR(128) NULL,
                 started_at DOUBLE,
                 ended_at DOUBLE NULL
             )

@@ -145,7 +145,7 @@ async def create_session(body: SessionCreate, request: Request, db: DBSession = 
         return existing
 
     project_id = _ensure_project_for_session(body, db)
-    session_payload = body.model_dump(exclude={"project_id"})
+    session_payload = body.model_dump(exclude={"project_id", "repo_url"})
     session = SessionModel(**session_payload, project_id=project_id)
     db.add(session)
     db.commit()
