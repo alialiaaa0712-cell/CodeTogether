@@ -13,11 +13,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session as DBSession
 
 from server.database import SessionLocal, get_db
+from server.models import ApiKey
 from server.models import Event as EventModel
 from server.models import Memory as MemoryModel
 from server.models import Message as MessageModel
 from server.models import Project as ProjectModel
 from server.models import Session as SessionModel
+from server.routers.auth import get_current_key
 from server.schemas import SessionCreate, SessionOut
 from server.services.extractor import extract_memories
 
@@ -118,7 +120,7 @@ class ParentUpdate(BaseModel):
 
 
 @router.post("", response_model=SessionOut)
-async def create_session(body: SessionCreate, request: Request, db: DBSession = Depends(get_db)):
+async def create_session(body: SessionCreate, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     创建 Agent 会话，并在成功写库后向移动端广播最新会话数据。
 
@@ -146,7 +148,7 @@ async def create_session(body: SessionCreate, request: Request, db: DBSession = 
 
     project_id = _ensure_project_for_session(body, db)
     session_payload = body.model_dump(exclude={"project_id", "repo_url"})
-    session = SessionModel(**session_payload, project_id=project_id)
+    session = SessionModel(**session_payload, project_id=project_id, user_label=_key.label if _key else None)
     db.add(session)
     db.commit()
     db.refresh(session)
@@ -160,7 +162,7 @@ def list_sessions(db: DBSession = Depends(get_db)):
 
 
 @router.patch("/{session_id}/status", response_model=SessionOut)
-async def update_status(session_id: str, body: StatusUpdate, request: Request, db: DBSession = Depends(get_db)):
+async def update_status(session_id: str, body: StatusUpdate, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     更新会话状态，并在状态变更后广播最新会话数据。
 
@@ -190,7 +192,7 @@ async def update_status(session_id: str, body: StatusUpdate, request: Request, d
 
 
 @router.patch("/{session_id}/parent", response_model=SessionOut)
-async def update_parent(session_id: str, body: ParentUpdate, request: Request, db: DBSession = Depends(get_db)):
+async def update_parent(session_id: str, body: ParentUpdate, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     更新会话父子关系，并向前端广播最新会话数据。
 
@@ -222,7 +224,7 @@ class NotesUpdate(BaseModel):
 
 
 @router.patch("/{session_id}/model", response_model=SessionOut)
-async def update_model(session_id: str, body: ModelUpdate, request: Request, db: DBSession = Depends(get_db)):
+async def update_model(session_id: str, body: ModelUpdate, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     更新会话模型名称，并向前端广播最新会话数据。
 
@@ -246,7 +248,7 @@ async def update_model(session_id: str, body: ModelUpdate, request: Request, db:
 
 
 @router.patch("/{session_id}/notes", response_model=SessionOut)
-async def update_notes(session_id: str, body: NotesUpdate, request: Request, db: DBSession = Depends(get_db)):
+async def update_notes(session_id: str, body: NotesUpdate, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     更新会话备注，并向前端广播最新会话数据。
 
@@ -270,7 +272,7 @@ async def update_notes(session_id: str, body: NotesUpdate, request: Request, db:
 
 
 @router.delete("/{session_id}", status_code=204)
-async def delete_session(session_id: str, request: Request, db: DBSession = Depends(get_db)):
+async def delete_session(session_id: str, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     删除指定会话及其关联的消息和事件记录。
 

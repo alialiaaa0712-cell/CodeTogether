@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import subprocess
 import threading
-from typing import List, Set
+from typing import List, Optional, Set
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session as DBSession
 
 from server.database import get_db
-from server.models import Message as MessageModel, Session as SessionModel
+from server.models import ApiKey, Message as MessageModel, Session as SessionModel
+from server.routers.auth import get_current_key
 from server.schemas import MessageCreate, MessageOut
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -45,7 +46,7 @@ def _wake_session(session_id: str, cwd: str, content: str) -> None:
 
 
 @router.post("", response_model=MessageOut)
-async def send_message(body: MessageCreate, request: Request, db: DBSession = Depends(get_db)):
+async def send_message(body: MessageCreate, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """写入手机端或 transcript 同步过来的消息，并按来源决定是否进入待注入队列。
 
     参数:

@@ -12,7 +12,9 @@ from server.models import Memory as MemoryModel
 from server.models import MemoryFeedbackLog as MemoryFeedbackLogModel
 from server.models import MemorySearchExposure as MemorySearchExposureModel
 from server.models import Session as SessionModel
+from server.routers.auth import get_current_key
 from server.schemas import MemoryCreate, MemoryFeedbackRequest, MemoryOut, MemorySearchRequest, MemoryUpdate
+from server.models import ApiKey
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 
@@ -176,7 +178,7 @@ def _delete_memory_with_relations(db: DBSession, memory: MemoryModel) -> None:
 
 
 @router.post("", response_model=MemoryOut)
-def create_memory(body: MemoryCreate, db: DBSession = Depends(get_db)):
+def create_memory(body: MemoryCreate, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     创建新记忆条目，默认状态为 pending，tier 为 short。
 
@@ -195,7 +197,7 @@ def create_memory(body: MemoryCreate, db: DBSession = Depends(get_db)):
 
 
 @router.post("/search", response_model=List[MemoryOut])
-def search_memories(body: MemorySearchRequest, db: DBSession = Depends(get_db)):
+def search_memories(body: MemorySearchRequest, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """按 Agent 显式给出的 query 搜索记忆，并记录本次曝光。
 
     参数:
@@ -220,7 +222,7 @@ def search_memories(body: MemorySearchRequest, db: DBSession = Depends(get_db)):
 
 
 @router.post("/{memory_id}/feedback", response_model=MemoryOut)
-def submit_memory_feedback(memory_id: str, body: MemoryFeedbackRequest, db: DBSession = Depends(get_db)):
+def submit_memory_feedback(memory_id: str, body: MemoryFeedbackRequest, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """提交 Agent 对记忆的显式反馈，并按累计积分驱动状态流转。
 
     参数:
@@ -299,7 +301,7 @@ def list_memories(
 
 
 @router.patch("/{memory_id}", response_model=MemoryOut)
-def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(get_db)):
+def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     仅支持两类人工确认流转：pending 启用为短期记忆，或 review 短期记忆晋升为长期记忆。
 
@@ -343,7 +345,7 @@ def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(ge
 
 
 @router.delete("/{memory_id}", status_code=204)
-def delete_memory(memory_id: str, db: DBSession = Depends(get_db)):
+def delete_memory(memory_id: str, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     删除指定记忆，用于拒绝 pending 或 review 记忆。
 
