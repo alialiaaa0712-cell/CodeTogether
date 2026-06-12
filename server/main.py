@@ -20,7 +20,8 @@ from server.database import Base, SessionLocal, engine, _is_sqlite
 from server.models import Memory as MemoryModel
 from server.models import Message as MessageModel
 from server.models import Session as SessionModel
-from server.routers import agents, chat, events, memory
+from server.routers import agents, chat, events, memory, auth as auth_router
+from server.routers.auth import get_current_key, seed_admin_key
 from server.services.housekeeping import run_memory_housekeeping
 from server.ws_manager import ConnectionManager
 
@@ -146,6 +147,11 @@ def _run_startup_migrations() -> None:
         _ensure_event_columns()
         _migrate_memories_to_score_fields()
     _activate_short_pending_memories()
+    db = SessionLocal()
+    try:
+        seed_admin_key(db)
+    finally:
+        db.close()
 
 
 if not os.getenv("TESTING"):
@@ -207,6 +213,7 @@ app.include_router(agents.router)
 app.include_router(events.router)
 app.include_router(chat.router)
 app.include_router(memory.router)
+app.include_router(auth_router.router)
 
 
 @app.websocket("/ws")

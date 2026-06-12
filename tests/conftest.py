@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from server.database import Base, get_db
 from server.main import app
+from server.routers.auth import get_current_key
 from fastapi.testclient import TestClient
 
 # 使用 SQLite 内存数据库，避免依赖 MySQL
@@ -41,4 +42,7 @@ def client(engine):
         finally:
             session.close()
     app.dependency_overrides[get_db] = override_get_db
+    # 测试中跳过 auth 验证，返回 None 表示已认证（非 admin 路由可接受）
+    app.dependency_overrides[get_current_key] = lambda: None
     return TestClient(app)
+

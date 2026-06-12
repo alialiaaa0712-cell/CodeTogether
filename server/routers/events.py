@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from server.database import get_db
 from server.models import Event as EventModel, Session as SessionModel
+from server.routers.auth import get_current_key
 from server.schemas import EventCreate, EventOut, SessionOut
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -35,10 +36,16 @@ async def _broadcast_session_update(request: Request, session: SessionModel) -> 
 
 
 @router.post("", response_model=EventOut)
-async def receive_event(body: EventCreate, request: Request, db: DBSession = Depends(get_db)):
+async def receive_event(
+    body: EventCreate,
+    request: Request,
+    db: DBSession = Depends(get_db),
+    _key=Depends(get_current_key),
+):
     """
     接收 hook 上报的工具调用事件；若会话首次出现，则先创建并广播会话快照，再广播事件本身。
     若事件携带 parent_session_id，同时回写子 Session 的 parent_id（首次写入时）。
+    需要有效的 Bearer Token 才能写入。
 
     参数:
         body: 事件上报请求体。
