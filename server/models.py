@@ -45,7 +45,7 @@ class Session(Base):
     cwd = Column(String(512))
     model = Column(String(128))
     notes = Column(Text)
-    user_label = Column(String(128), nullable=True)
+    user_label = Column(String(128), nullable=True)  # 请求方的 API Key label，用于前端区分是哪台机器的会话
     started_at = Column(Double, default=time.time)
     ended_at = Column(Double)
 
@@ -181,6 +181,7 @@ class ApiKey(Base):
     id = Column(String(36), primary_key=True, default=_uuid)
     key_hash = Column(String(64), nullable=False, unique=True)
     label = Column(String(128), nullable=False)
+    # SQLite 将 Boolean 存为 0/1，为跨数据库兼容直接用 Integer
     is_admin = Column(Integer, nullable=False, default=0)
     is_active = Column(Integer, nullable=False, default=1)
     created_at = Column(Double, default=time.time)

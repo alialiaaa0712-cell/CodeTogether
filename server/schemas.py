@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # 会话相关 schemas
@@ -141,7 +141,7 @@ class MemoryUpdate(BaseModel):
 
 
 class ApiKeyCreate(BaseModel):
-    label: str
+    label: str = Field(..., max_length=128)
     is_admin: bool = False
 
 
@@ -161,4 +161,9 @@ class ApiKeyOut(BaseModel):
         if hasattr(data, "is_admin"):
             object.__setattr__(data, "is_admin", bool(data.is_admin))
             object.__setattr__(data, "is_active", bool(data.is_active))
+        elif isinstance(data, dict):
+            if "is_admin" in data:
+                data["is_admin"] = bool(data["is_admin"])
+            if "is_active" in data:
+                data["is_active"] = bool(data["is_active"])
         return data
