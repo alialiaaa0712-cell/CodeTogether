@@ -277,6 +277,7 @@ def list_memories(
     status: Optional[str] = None,
     tier: Optional[str] = None,
     db: DBSession = Depends(get_db),
+    _key: Optional[ApiKey] = Depends(get_current_key),
 ):
     """
     列出记忆，支持按 project_id、status、tier 过滤，最多返回 200 条。

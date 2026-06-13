@@ -184,7 +184,7 @@ async def create_session(body: SessionCreate, request: Request, db: DBSession = 
 
 
 @router.get("", response_model=List[SessionOut])
-def list_sessions(db: DBSession = Depends(get_db)):
+def list_sessions(db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     return db.query(SessionModel).all()
 
 

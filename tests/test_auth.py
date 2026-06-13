@@ -113,3 +113,27 @@ def test_revoked_key_returns_401(client_no_auth):
         "session_id": "s1", "type": "pre_tool"
     }, headers={"Authorization": f"Bearer {plain}"})
     assert resp.status_code == 401
+
+
+def test_get_agents_requires_auth(client_no_auth):
+    """无 key 时 GET /agents 应返回 401。"""
+    resp = client_no_auth.get("/agents")
+    assert resp.status_code == 401
+
+
+def test_get_chat_history_requires_auth(client_no_auth):
+    """无 key 时 GET /chat/{id}/history 应返回 401。"""
+    resp = client_no_auth.get("/chat/nonexistent/history")
+    assert resp.status_code == 401
+
+
+def test_get_events_requires_auth(client_no_auth):
+    """无 key 时 GET /events 应返回 401。"""
+    resp = client_no_auth.get("/events")
+    assert resp.status_code == 401
+
+
+def test_get_memories_requires_auth(client_no_auth):
+    """无 key 时 GET /memory/ 应返回 401。"""
+    resp = client_no_auth.get("/memory/")
+    assert resp.status_code == 401

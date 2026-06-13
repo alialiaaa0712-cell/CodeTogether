@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from server.database import get_db
 from server.models import Event as EventModel, Session as SessionModel
+from server.models import ApiKey
 from server.routers.auth import get_current_key
 from server.schemas import EventCreate, EventOut, SessionOut
 
@@ -107,7 +108,7 @@ async def receive_event(
 
 
 @router.get("", response_model=List[EventOut])
-def list_events(session_id: Optional[str] = None, include_children: bool = False, db: DBSession = Depends(get_db)):
+def list_events(session_id: Optional[str] = None, include_children: bool = False, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     列出事件；include_children=true 时同时包含所有子 Agent 的事件。
 

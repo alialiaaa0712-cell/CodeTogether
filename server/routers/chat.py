@@ -111,7 +111,7 @@ def poll_messages(session_id: str, db: DBSession = Depends(get_db), _key: Option
 
 
 @router.get("/{session_id}/history", response_model=List[MessageOut])
-def message_history(session_id: str, db: DBSession = Depends(get_db)):
+def message_history(session_id: str, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     返回指定会话最近的聊天历史，供移动端渲染消息列表。
 
