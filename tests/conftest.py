@@ -34,7 +34,12 @@ def db(engine):
 
 @pytest.fixture
 def client(engine):
+    from server.models import ApiKey
     TestingSessionLocal = sessionmaker(bind=engine)
+    # 清空 ApiKey 表，防止其他测试遗留的活跃 key 影响 WS 认证逻辑
+    with TestingSessionLocal() as s:
+        s.query(ApiKey).delete()
+        s.commit()
     def override_get_db():
         session = TestingSessionLocal()
         try:
