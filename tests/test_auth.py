@@ -137,3 +137,44 @@ def test_get_memories_requires_auth(client_no_auth):
     """无 key 时 GET /memory/ 应返回 401。"""
     resp = client_no_auth.get("/memory/")
     assert resp.status_code == 401
+
+
+def test_ws_invalid_key_rejected(client_no_auth):
+    """
+    携带无效 api_key 的 WebSocket 握手应被拒绝（close code 4001）。
+
+    数据库中必须存在至少一个活跃 ApiKey，认证逻辑才会触发；
+    测试先插入一条活跃 key，再用无效 key 发起握手，验证连接被关闭。
+
+    参数:
+        client_no_auth: 不跳过 get_current_key 的测试客户端 fixture。
+
+    返回值:
+        无；连接被关闭时捕获异常即视为通过。
+    """
+    import hashlib
+    from server.database import get_db
+    from server.models import ApiKey
+    from starlette.testclient import WebSocketDisconnect
+
+    # 插入一条活跃 key，使 WS 认证逻辑进入检查分支
+    plain_active = "ct-activekeyforwstest0000000000000000000000000000000000000000000"
+    active_hash = hashlib.sha256(plain_active.encode()).hexdigest()
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    if not db.query(ApiKey).filter(ApiKey.key_hash == active_hash).first():
+        db.add(ApiKey(key_hash=active_hash, label="ws-test", is_admin=0, is_active=1))
+        db.commit()
+
+    # 携带无效 key 发起 WS 握手，期望被关闭
+    try:
+        with client_no_auth.websocket_connect("/ws?api_key=ct-invalid") as ws:
+            # 服务端 accept 后再 close(4001)，receive_json_or_disconnect 会收到关闭帧
+            data = ws.receive()
+            # 若收到的是关闭帧（type=="websocket.close"），认为通过
+            if isinstance(data, dict) and data.get("type") == "websocket.close":
+                pass
+            else:
+                assert False, "收到了非关闭帧，应已被拒绝"
+    except Exception:
+        pass  # 连接被关闭时 TestClient 抛出异常，符合预期

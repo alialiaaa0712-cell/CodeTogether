@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -14,14 +14,15 @@ from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import inspect, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
-from server.database import Base, SessionLocal, engine, _is_sqlite
+from server.database import Base, SessionLocal, engine, _is_sqlite, get_db
+from server.models import ApiKey as ApiKeyModel
 from server.models import Memory as MemoryModel
 from server.models import Message as MessageModel
 from server.models import Session as SessionModel
 from server.routers import agents, chat, events, memory, auth as auth_router
-from server.routers.auth import get_current_key, seed_admin_key
+from server.routers.auth import get_current_key, seed_admin_key, _hash_key
 from server.services.housekeeping import run_memory_housekeeping
 from server.ws_manager import ConnectionManager
 
@@ -236,16 +237,38 @@ app.include_router(auth_router.router)
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    api_key: str = "",
+    db: Session = Depends(get_db),
+):
     """
-    处理 WebSocket 连接的建立与断开。
+    处理 WebSocket 连接。若服务端存在活跃 ApiKey 记录，则要求 api_key query param 有效。
+    本地无认证场景（api_keys 表为空）时直接放行，保持向后兼容。
 
     参数:
-        websocket: FastAPI 提供的 WebSocket 连接对象，用于接收客户端消息并维护连接状态。
+        websocket: FastAPI WebSocket 连接对象。
+        api_key: query string 中的明文 API Key，可为空。
+        db: 数据库会话，通过 get_db 依赖注入，测试时可被 override。
 
     返回值:
-        无返回值；连接关闭后结束协程。
+        无；认证失败时以 code=4001 关闭连接。
     """
+    has_any_key = db.query(ApiKeyModel).filter(ApiKeyModel.is_active == 1).first() is not None
+    if has_any_key:
+        if not api_key:
+            await websocket.accept()
+            await websocket.close(code=4001)
+            return
+        key_hash = _hash_key(api_key)
+        valid = db.query(ApiKeyModel).filter(
+            ApiKeyModel.key_hash == key_hash,
+            ApiKeyModel.is_active == 1,
+        ).first()
+        if not valid:
+            await websocket.accept()
+            await websocket.close(code=4001)
+            return
     await manager.connect(websocket)
     try:
         while True:
