@@ -2,6 +2,43 @@ const SERVER = location.origin;
 const WS_PROTOCOL = location.protocol === "https:" ? "wss:" : "ws:";
 const WS_URL = `${WS_PROTOCOL}//${location.host}/ws`;
 
+const _LS_API_KEY = "ct_api_key";
+
+/**
+ * 从 localStorage 读取已存储的 API Key。
+ *
+ * 返回值:
+ *   存储的 key 字符串；未登录时返回空字符串。
+ */
+function getApiKey() {
+  return localStorage.getItem(_LS_API_KEY) || "";
+}
+
+/**
+ * 构造携带 API Key 的 Authorization 请求头对象。
+ *
+ * 返回值:
+ *   包含 Authorization 字段的对象；无 key 时返回空对象。
+ */
+function authHeaders() {
+  const key = getApiKey();
+  return key ? { Authorization: `Bearer ${key}` } : {};
+}
+
+/**
+ * 显示全屏登录覆盖层。
+ */
+function showLogin() {
+  document.getElementById("login-overlay").style.display = "flex";
+}
+
+/**
+ * 隐藏全屏登录覆盖层。
+ */
+function hideLogin() {
+  document.getElementById("login-overlay").style.display = "none";
+}
+
 const _LS_KEY = "ct_ui_state";
 
 function saveUiState() {
@@ -83,6 +120,10 @@ const dom = {
   memoryScopeCurrent: document.getElementById("memory-scope-current"),
   memoryScopeAll: document.getElementById("memory-scope-all"),
   toast: document.getElementById("toast"),
+  logoutBtn: document.getElementById("logout-btn"),
+  loginKeyInput: document.getElementById("login-key-input"),
+  loginSubmit: document.getElementById("login-submit"),
+  loginError: document.getElementById("login-error"),
 };
 
 /**
@@ -158,10 +199,26 @@ function setConnectionStatus(connected) {
 }
 
 /**
- * 请求 JSON 接口并在响应异常时抛出错误。
+ * 请求 JSON 接口，自动注入认证头；401 时清除 key 并跳转到登录页。
+ *
+ * 参数:
+ *   url: 请求地址。
+ *   options: fetch 选项，headers 字段会与认证头合并。
+ *
+ * 返回值:
+ *   解析后的 JSON 对象；204 或空响应时返回 null。
  */
 async function fetchJson(url, options = {}) {
-  const resp = await fetch(url, options);
+  const merged = {
+    ...options,
+    headers: { ...authHeaders(), ...(options.headers || {}) },
+  };
+  const resp = await fetch(url, merged);
+  if (resp.status === 401) {
+    localStorage.removeItem(_LS_API_KEY);
+    showLogin();
+    throw new Error("401 Unauthorized");
+  }
   if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
   if (resp.status === 204 || resp.headers.get("content-length") === "0") return null;
   return resp.json();
@@ -741,8 +798,19 @@ function upsertSession(session) {
   }
 }
 
+/**
+ * 构造携带 api_key query param 的 WebSocket URL。
+ *
+ * 返回值:
+ *   带认证参数的完整 WebSocket URL 字符串。
+ */
+function buildWsUrl() {
+  const key = getApiKey();
+  return `${WS_PROTOCOL}//${location.host}/ws${key ? "?api_key=" + encodeURIComponent(key) : ""}`;
+}
+
 function connectWebSocket() {
-  const ws = new WebSocket(WS_URL);
+  const ws = new WebSocket(buildWsUrl());
   ws.onopen = () => { setConnectionStatus(true); state.reconnectDelay = 1000; };
   ws.onmessage = (event) => {
     const payload = JSON.parse(event.data);
@@ -778,6 +846,13 @@ function connectWebSocket() {
 
 async function init() {
   setConnectionStatus(false);
+
+  if (!getApiKey()) {
+    showLogin();
+    return;
+  }
+  hideLogin();
+  if (dom.logoutBtn) dom.logoutBtn.style.display = "";
 
   const saved = loadUiState();
   if (saved.memoryFilter) state.memoryFilter = saved.memoryFilter;
@@ -864,6 +939,45 @@ dom.memoryFilterApply.addEventListener("click", () => {
 dom.memorySortTime.addEventListener("click", () => { state.draftMemorySort = "time"; updateMemoryDrawerControls(); });
 dom.memorySortScore.addEventListener("click", () => { state.draftMemorySort = "score"; updateMemoryDrawerControls(); });
 dom.memorySortFeedback.addEventListener("click", () => { state.draftMemorySort = "feedback"; updateMemoryDrawerControls(); });
+
+if (dom.logoutBtn) {
+  dom.logoutBtn.addEventListener("click", () => {
+    localStorage.removeItem(_LS_API_KEY);
+    location.reload();
+  });
+}
+
+if (dom.loginSubmit) {
+  dom.loginSubmit.addEventListener("click", async () => {
+    const key = (dom.loginKeyInput.value || "").trim();
+    if (!key) {
+      dom.loginError.textContent = "请输入 API Key";
+      dom.loginError.style.display = "";
+      return;
+    }
+    dom.loginError.style.display = "none";
+    dom.loginSubmit.disabled = true;
+    try {
+      const resp = await fetch("/agents", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      if (resp.status === 401) {
+        dom.loginError.textContent = "API Key 无效，请重新输入";
+        dom.loginError.style.display = "";
+        return;
+      }
+      localStorage.setItem(_LS_API_KEY, key);
+      hideLogin();
+      if (dom.logoutBtn) dom.logoutBtn.style.display = "";
+      await init();
+    } catch (_) {
+      dom.loginError.textContent = "网络错误，请重试";
+      dom.loginError.style.display = "";
+    } finally {
+      dom.loginSubmit.disabled = false;
+    }
+  });
+}
 
 init().catch((e) => {
   console.error("初始化失败", e);
