@@ -1,6 +1,5 @@
 const SERVER = location.origin;
 const WS_PROTOCOL = location.protocol === "https:" ? "wss:" : "ws:";
-const WS_URL = `${WS_PROTOCOL}//${location.host}/ws`;
 
 const _LS_API_KEY = "ct_api_key";
 
@@ -968,7 +967,6 @@ if (dom.loginSubmit) {
       }
       localStorage.setItem(_LS_API_KEY, key);
       hideLogin();
-      if (dom.logoutBtn) dom.logoutBtn.style.display = "";
       await init();
     } catch (_) {
       dom.loginError.textContent = "网络错误，请重试";
@@ -976,6 +974,12 @@ if (dom.loginSubmit) {
     } finally {
       dom.loginSubmit.disabled = false;
     }
+  });
+}
+
+if (dom.loginKeyInput) {
+  dom.loginKeyInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") dom.loginSubmit.click();
   });
 }
 
