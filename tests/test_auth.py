@@ -159,18 +159,29 @@ def test_ws_invalid_key_rejected(client_no_auth):
     db_gen = app.dependency_overrides[get_db]()
     db = next(db_gen)
     sentinel_hash = hashlib.sha256(b"ct-sentinel-ws-test").hexdigest()
-    if not db.query(ApiKey).filter(ApiKey.key_hash == sentinel_hash).first():
-        db.add(ApiKey(key_hash=sentinel_hash, label="ws-test", is_admin=0, is_active=1))
+    sentinel_key = db.query(ApiKey).filter(ApiKey.key_hash == sentinel_hash).first()
+    inserted = False
+    if not sentinel_key:
+        sentinel_key = ApiKey(key_hash=sentinel_hash, label="ws-test", is_admin=0, is_active=1)
+        db.add(sentinel_key)
         db.commit()
+        db.refresh(sentinel_key)
+        inserted = True
 
-    rejected = False
     try:
-        with client_no_auth.websocket_connect("/ws?api_key=ct-invalid") as ws:
-            data = ws.receive()
-            # 服务端发送关闭帧
-            if isinstance(data, dict) and data.get("type") == "websocket.close":
-                rejected = True
-    except WebSocketDisconnect:
-        rejected = True  # 服务端关闭连接时 TestClient 抛出此异常
+        rejected = False
+        try:
+            with client_no_auth.websocket_connect("/ws?api_key=ct-invalid") as ws:
+                data = ws.receive()
+                # 服务端发送关闭帧
+                if isinstance(data, dict) and data.get("type") == "websocket.close":
+                    rejected = True
+        except WebSocketDisconnect:
+            rejected = True  # 服务端关闭连接时 TestClient 抛出此异常
 
-    assert rejected, "无效 api_key 应被拒绝，但连接成功建立"
+        assert rejected, "无效 api_key 应被拒绝，但连接成功建立"
+    finally:
+        # 清理 sentinel key，避免污染后续测试
+        if inserted:
+            db.delete(db.merge(sentinel_key))
+            db.commit()
