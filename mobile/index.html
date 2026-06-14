@@ -14,6 +14,7 @@
     <div id="topbar-main">
       <span class="topbar-title">CodeTogether</span>
       <span id="conn-status" class="conn-status disconnected">未连接</span>
+      <button id="logout-btn" class="logout-btn" type="button" style="display:none">退出</button>
     </div>
   </header>
 
@@ -124,7 +125,16 @@
     <button class="tab-btn" data-tab="memory" type="button">记忆</button>
   </nav>
 
+  <div id="login-overlay" class="login-overlay" style="display:none">
+    <div class="login-card">
+      <h1 class="login-title">CodeTogether</h1>
+      <p class="login-desc">请输入 API Key 以继续</p>
+      <input id="login-key-input" class="login-input" type="password" placeholder="ct-xxxxxxxx..." autocomplete="off">
+      <p id="login-error" class="login-error" style="display:none"></p>
+      <button id="login-submit" class="login-submit" type="button">确认</button>
+    </div>
+  </div>
   <div id="toast" class="toast"></div>
-  <script src="app.js?v=20260612i"></script>
+  <script src="app.js?v=20260614a"></script>
 </body>
 </html>
