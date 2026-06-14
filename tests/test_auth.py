@@ -29,11 +29,29 @@ def client_no_auth(engine):
 
 
 def test_post_events_requires_auth(client_no_auth):
-    """无 key 时写事件应返回 401。"""
-    resp = client_no_auth.post("/events", json={
-        "session_id": "s1", "type": "pre_tool"
-    })
-    assert resp.status_code == 401
+    """数据库存在活跃 key 时，无 Bearer Token 的写请求应返回 401。"""
+    import hashlib
+    from server.database import get_db
+    from server.models import ApiKey
+
+    sentinel_hash = hashlib.sha256(b"ct-sentinel-events-auth").hexdigest()
+    db_gen = app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    inserted = False
+    if not db.query(ApiKey).filter(ApiKey.key_hash == sentinel_hash).first():
+        sentinel = ApiKey(key_hash=sentinel_hash, label="test-sentinel", is_admin=0, is_active=1)
+        db.add(sentinel)
+        db.commit()
+        db.refresh(sentinel)
+        inserted = True
+
+    try:
+        resp = client_no_auth.post("/events", json={"session_id": "s1", "type": "pre_tool"})
+        assert resp.status_code == 401
+    finally:
+        if inserted:
+            db.query(ApiKey).filter(ApiKey.key_hash == sentinel_hash).delete()
+            db.commit()
 
 
 def test_admin_create_key(client_no_auth):

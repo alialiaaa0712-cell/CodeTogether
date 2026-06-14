@@ -63,6 +63,10 @@ def get_current_key(
     if path in _EXEMPT_PATHS or any(path.startswith(p) for p in _EXEMPT_PREFIXES):
         return None
 
+    # 数据库无任何活跃 key 时放行（本地开发模式）
+    if not db.query(ApiKey).filter(ApiKey.is_active == 1).first():
+        return None
+
     if not credentials:
         raise HTTPException(status_code=401, detail="missing api key")
 
