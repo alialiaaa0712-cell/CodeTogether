@@ -45,7 +45,7 @@ def _generate_key() -> str:
 
 def get_current_key(
     request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
     db: DBSession = Depends(get_db),
 ) -> Optional[ApiKey]:
     """
