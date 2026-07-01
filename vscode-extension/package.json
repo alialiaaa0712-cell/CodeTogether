@@ -1,0 +1,68 @@
+{
+  "name": "codetogether",
+  "displayName": "CodeTogether",
+  "description": "Claude Code memory & monitoring — auto-start server and mobile tunnel",
+  "version": "0.1.0",
+  "publisher": "codetogether",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codetogether/codetogether"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codetogether.copyUrl",
+        "title": "CodeTogether: Copy Tunnel URL"
+      },
+      {
+        "command": "codetogether.restart",
+        "title": "CodeTogether: Restart Server & Tunnel"
+      },
+      {
+        "command": "codetogether.openOutput",
+        "title": "CodeTogether: Open Output"
+      }
+    ],
+    "configuration": {
+      "title": "CodeTogether",
+      "properties": {
+        "codetogether.extractorApiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "记忆提炼服务的 API Key（对应 `CT_EXTRACTOR_API_KEY` 环境变量）",
+          "order": 1
+        },
+        "codetogether.extractorBaseUrl": {
+          "type": "string",
+          "default": "https://oneapi-comate.baidu-int.com/v1",
+          "markdownDescription": "记忆提炼服务的 Base URL（兼容 OpenAI 格式）",
+          "order": 2
+        },
+        "codetogether.extractorModel": {
+          "type": "string",
+          "default": "gpt-5.4",
+          "markdownDescription": "记忆提炼使用的模型名",
+          "order": 3
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "npm run copy-python && tsc -p tsconfig.json",
+    "copy-python": "node scripts/copy-python.js",
+    "package": "npm run build && npx vsce package --allow-missing-repository",
+    "watch": "tsc -watch -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.24.0"
+  }
+}

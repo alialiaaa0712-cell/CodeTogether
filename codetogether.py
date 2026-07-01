@@ -148,11 +148,16 @@ def _register_mcp_server() -> None:
 
 def cmd_init(args):
     print("=== CodeTogether Init ===")
-    print(f"\n[1/3] Registering hooks in {SETTINGS_PATH}")
+    print(f"\n[1/2] Registering hooks in {SETTINGS_PATH}")
     _register_hooks()
 
-    print(f"\n[2/3] Registering MCP server in {CLAUDE_CONFIG_PATH}")
+    print(f"\n[2/2] Registering MCP server in {CLAUDE_CONFIG_PATH}")
     _register_mcp_server()
+
+    # --no-start: VSCode 插件模式，只注册不启动 server（server 由插件管理）
+    if getattr(args, "no_start", False):
+        print("\nInit complete (server not started, managed by VSCode extension).")
+        return
 
     print(f"\n[3/3] Starting server on port {DEFAULT_PORT}")
     print("      Press Ctrl+C to stop.\n")
@@ -200,7 +205,8 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(prog="codetogether")
     sub = parser.add_subparsers(dest="cmd")
-    sub.add_parser("init", help="Register hooks and start server")
+    init_parser = sub.add_parser("init", help="Register hooks and start server")
+    init_parser.add_argument("--no-start", action="store_true", help="Only register hooks/MCP, do not start server")
     sub.add_parser("start", help="Start server only")
     sub.add_parser("install-service", help="Install launchd service (auto-start on login)")
     sub.add_parser("uninstall-service", help="Uninstall launchd service")

@@ -65,12 +65,13 @@ def extract_memories(
         过滤后的记忆列表；失败时返回空列表。
     """
     client = OpenAI(
-        api_key=os.getenv("ANTHROPIC_AUTH_TOKEN", ""),
-        base_url="https://oneapi-comate.baidu-int.com/v1",
+        api_key=os.getenv("CT_EXTRACTOR_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN", ""),
+        base_url=os.getenv("CT_EXTRACTOR_BASE_URL", "https://oneapi-comate.baidu-int.com/v1"),
     )
+    model = os.getenv("CT_EXTRACTOR_MODEL", "gpt-5.4")
     try:
         resp = client.chat.completions.create(
-            model="gpt-5.4",
+            model=model,
             max_tokens=1024,
             messages=[{"role": "user", "content": _PROMPT.format(summary=summary)}],
         )
