@@ -1,0 +1,12 @@
+node_modules
+.vscode-test
+*.vsix
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.git
+.gitignore
+scripts
+src
+tsconfig.json
+# out/ 和 python/ 保留，是打包的核心内容
