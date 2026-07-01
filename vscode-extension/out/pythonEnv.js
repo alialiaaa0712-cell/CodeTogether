@@ -40,7 +40,7 @@ const crypto = __importStar(require("crypto"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 /**
- * 检测系统 Python 版本是否 >= 3.9。
+ * 检测系统 Python 版本是否 >= 3.10。
  * 返回可用的 python 可执行文件路径，不满足时抛出错误。
  */
 async function checkPython() {
@@ -54,7 +54,7 @@ async function checkPython() {
             if (match) {
                 const major = parseInt(match[1], 10);
                 const minor = parseInt(match[2], 10);
-                if (major > 3 || (major === 3 && minor >= 9)) {
+                if (major > 3 || (major === 3 && minor >= 10)) {
                     return cmd;
                 }
             }
@@ -63,7 +63,7 @@ async function checkPython() {
             // 继续尝试下一个
         }
     }
-    throw new Error("未找到 Python 3.9+。请先安装 Python：https://www.python.org/downloads/\n安装后重新激活插件。");
+    throw new Error("未找到 Python 3.10+。请先安装 Python 3.10 或更高版本：https://www.python.org/downloads/\n安装后重新激活插件。");
 }
 /**
  * 确保 venv 存在且依赖已安装。
@@ -85,6 +85,12 @@ async function ensureVenv(pythonCmd, globalStoragePath, pythonDir, output) {
         output.appendLine("[CodeTogether] 创建 Python 虚拟环境...");
         await runCommandStreamed(pythonCmd, ["-m", "venv", venvDir], {}, output);
     }
+    // 先升级 pip，避免旧版本找不到包
+    output.appendLine("[CodeTogether] 升级 pip...");
+    const pythonInVenvForUpgrade = process.platform === "win32"
+        ? path.join(venvDir, "Scripts", "python.exe")
+        : path.join(venvDir, "bin", "python");
+    await runCommandStreamed(pythonInVenvForUpgrade, ["-m", "pip", "install", "--upgrade", "pip", "--quiet"], {}, output);
     // 检查 requirements.txt hash
     const currentHash = hashFile_compute(requirementsPath);
     const savedHash = fs.existsSync(hashFile) ? fs.readFileSync(hashFile, "utf8").trim() : "";

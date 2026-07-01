@@ -5,13 +5,19 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { killProcess } from "./processManager";
 
-/** cloudflared 平台二进制文件名映射 */
-function getCloudflaredFilename(): string {
+/** cloudflared 下载信息 */
+function getCloudflaredAsset(): { filename: string; isTgz: boolean } {
   const { platform, arch } = process;
-  if (platform === "win32") return "cloudflared-windows-amd64.exe";
+  if (platform === "win32") {
+    return { filename: "cloudflared-windows-amd64.exe", isTgz: false };
+  }
   const osName = platform === "darwin" ? "darwin" : "linux";
   const archName = arch === "arm64" ? "arm64" : "amd64";
-  return `cloudflared-${osName}-${archName}`;
+  if (platform === "darwin") {
+    // macOS 新版是 tgz 格式
+    return { filename: `cloudflared-${osName}-${archName}.tgz`, isTgz: true };
+  }
+  return { filename: `cloudflared-${osName}-${archName}`, isTgz: false };
 }
 
 const CLOUDFLARED_BASE_URL =
@@ -20,7 +26,7 @@ const CLOUDFLARED_BASE_URL =
 let tunnelProcess: cp.ChildProcess | null = null;
 
 /**
- * 确保 cloudflared 二进制存在，不存在时下载。
+ * 确保 cloudflared 二进制存在，不存在时下载（macOS 需解压 tgz）。
  * 返回二进制文件路径。
  */
 export async function ensureCloudflared(
@@ -30,7 +36,6 @@ export async function ensureCloudflared(
   const binDir = path.join(globalStoragePath, "bin");
   if (!fs.existsSync(binDir)) fs.mkdirSync(binDir, { recursive: true });
 
-  const filename = getCloudflaredFilename();
   const binaryPath = path.join(binDir, process.platform === "win32" ? "cloudflared.exe" : "cloudflared");
 
   if (fs.existsSync(binaryPath) && fs.statSync(binaryPath).size > 100_000) {
@@ -38,16 +43,52 @@ export async function ensureCloudflared(
     return binaryPath;
   }
 
+  const { filename, isTgz } = getCloudflaredAsset();
   const url = `${CLOUDFLARED_BASE_URL}${filename}`;
   output.appendLine(`[CodeTogether] 下载 cloudflared: ${url}`);
 
-  await downloadFile(url, binaryPath, output);
+  if (isTgz) {
+    const tgzPath = path.join(binDir, filename);
+    await downloadFile(url, tgzPath, output);
+    // 解压 tgz，提取 cloudflared 二进制
+    await extractTgz(tgzPath, binDir, binaryPath, output);
+    fs.unlinkSync(tgzPath);
+  } else {
+    await downloadFile(url, binaryPath, output);
+  }
 
   if (process.platform !== "win32") {
     fs.chmodSync(binaryPath, 0o755);
   }
   output.appendLine("[CodeTogether] cloudflared 下载完成");
   return binaryPath;
+}
+
+function extractTgz(
+  tgzPath: string,
+  destDir: string,
+  binaryPath: string,
+  output: vscode.OutputChannel
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // 用系统 tar 解压，提取名为 cloudflared 的文件
+    const proc = cp.spawn("tar", ["-xzf", tgzPath, "-C", destDir], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    proc.stdout?.on("data", (d: Buffer) => output.append(d.toString()));
+    proc.stderr?.on("data", (d: Buffer) => output.append(d.toString()));
+    proc.on("close", (code) => {
+      if (code !== 0) { reject(new Error(`tar 解压失败，code=${code}`)); return; }
+      // tgz 内可能是 cloudflared 或带版本号的名字，找到后重命名
+      const files = fs.readdirSync(destDir);
+      const extracted = files.find(f => f.startsWith("cloudflared") && !f.endsWith(".tgz") && !f.endsWith(".exe"));
+      if (extracted && extracted !== "cloudflared") {
+        fs.renameSync(path.join(destDir, extracted), binaryPath);
+      }
+      resolve();
+    });
+    proc.on("error", reject);
+  });
 }
 
 /**
