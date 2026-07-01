@@ -6,7 +6,7 @@
   <meta name="description" content="CodeTogether Mobile Web App">
   <title>CodeTogether</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="style.css?v=20260612g">
+  <link rel="stylesheet" href="style.css?v=20260612p">
 </head>
 <body>
   <header class="topbar">
@@ -45,7 +45,6 @@
       </section>
       <div id="chat-agent-info" class="chat-agent-info"></div>
       <div id="chat-history" class="chat-history"></div>
-      <button id="chat-jump-latest" class="chat-jump-latest" type="button" hidden>有新消息，跳到最新</button>
       <form id="chat-form" class="chat-form">
         <textarea id="chat-input" rows="3" placeholder="输入发给 Agent 的消息"></textarea>
         <button id="chat-send" type="submit">发送消息</button>
@@ -73,6 +72,8 @@
       </div>
     </section>
   </main>
+
+  <button id="chat-jump-latest" class="chat-jump-latest" type="button" hidden>有新消息，跳到最新</button>
 
   <div id="memory-filter-drawer" class="drawer" aria-hidden="true">
     <button id="memory-filter-backdrop" class="drawer-backdrop" type="button" aria-label="关闭筛选"></button>
@@ -125,6 +126,6 @@
   </nav>
 
   <div id="toast" class="toast"></div>
-  <script src="app.js?v=20260612i"></script>
+  <script src="app.js?v=20260612j"></script>
 </body>
 </html>

@@ -142,6 +142,39 @@ def ensure_session(session_id: str, cwd: str = None) -> None:
         pass
 
 
+def create_memory(title: str, content: str, session_id: str, tags: str = None) -> dict:
+    """
+    由模型主动创建一条短期记忆，服务端自动关联项目。
+
+    参数:
+        title: 记忆标题，简短描述核心结论。
+        content: 记忆正文，描述约束/规则/坑点及其原因。
+        session_id: 当前会话 ID，用于服务端解析所属项目。
+        tags: 可选的逗号分隔标签。
+
+    返回值:
+        服务端返回的记忆对象；失败时返回 None。
+    """
+    try:
+        payload: dict = {
+            "title": title,
+            "content": content,
+            "source_session_id": session_id,
+        }
+        if tags:
+            payload["tags"] = tags
+        req = urllib.request.Request(
+            f"{SERVER}/memory",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        resp = urllib.request.urlopen(req, timeout=TIMEOUT)
+        return json.loads(resp.read())
+    except Exception:
+        return None
+
+
 def post_chat_message(session_id: str, content: str, role: str = "user", source_uuid: str = None, created_at: float = None) -> None:
     """
     向服务端写入一条聊天消息，失败时静默跳过。source_uuid 用于去重。

@@ -343,7 +343,10 @@ function updateJumpToLatestButton() {
  * 主动跳转到聊天列表底部，并清空未读跳转提示。
  */
 function jumpToLatestMessage() {
-  dom.chatHistory.scrollTop = dom.chatHistory.scrollHeight;
+  const el = dom.chatHistory;
+  el.scrollTop = el.scrollHeight;
+  // iOS Safari 有时需要 requestAnimationFrame 才能生效
+  requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
   state.chatShouldAutoScroll = true;
   state.showJumpToLatest = false;
   updateJumpToLatestButton();

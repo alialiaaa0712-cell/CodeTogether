@@ -78,13 +78,18 @@ def _mcp_server_config() -> dict:
     返回值:
         可直接写入 `mcpServers.codetogether-memory` 的配置字典。
     """
+    import os
+    env: dict = {
+        "CODETOGETHER_SERVER": f"http://127.0.0.1:{DEFAULT_PORT}",
+    }
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    if session_id:
+        env["CLAUDE_SESSION_ID"] = session_id
     return {
         "type": "stdio",
         "command": sys.executable,
         "args": [str(MCP_SERVER_PATH)],
-        "env": {
-            "CODETOGETHER_SERVER": f"http://127.0.0.1:{DEFAULT_PORT}",
-        },
+        "env": env,
     }
 
 
