@@ -184,7 +184,7 @@ async def update_status(session_id: str, body: StatusUpdate, request: Request, d
     await _broadcast_session_update(request, session)
 
     if body.status == "stopped":
-        _trigger_extraction(session_id, session.project_id)
+        pass  # 记忆由 Claude 通过 memory_create MCP 工具主动创建，不再自动提炼
 
     return session
 

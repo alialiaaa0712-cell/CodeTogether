@@ -8,10 +8,33 @@ from pathlib import Path
 
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 CLAUDE_CONFIG_PATH = Path.home() / ".claude.json"
+GLOBAL_CLAUDE_MD_PATH = Path.home() / ".claude" / "CLAUDE.md"
 HOOKS_DIR = Path(__file__).resolve().parent / "hooks"
 MCP_SERVER_PATH = Path(__file__).resolve().parent / "mcp_server" / "server.py"
 SERVER_MODULE = "server.main:app"
 DEFAULT_PORT = 7879
+
+_MEMORY_RULES_MARKER = "## 记忆工具使用规范（必须遵守）"
+_MEMORY_RULES = """
+## 记忆工具使用规范（必须遵守）
+
+你有三个记忆工具可用：`memory_search`、`memory_create`、`memory_feedback`。
+
+**搜索记忆（memory_search）**
+- 开始任何实现、改动或排障任务前，必须先调用 `memory_search` 查询相关项目规则、约束和历史坑点
+- 查询关键词应与当前任务直接相关（如技术栈、模块名、问题类型）
+
+**创建记忆（memory_create）**
+- 完成一个有意义的任务阶段后（修复 bug、实现功能、解决问题），必须调用 `memory_create` 记录关键结论
+- 只记录可复用的规则/约束/教训，不记录操作流水（不要记"运行了什么命令"）
+- 内容需包含"为什么"，不只是"是什么"
+
+**提交反馈（memory_feedback）**
+- 使用了某条记忆后，必须调用 `memory_feedback` 对其打分
+  - 记忆有用且准确：`score: 1` 或 `score: 2`
+  - 记忆过时、有误或不相关：`score: -1` 或 `score: -2`
+- reason 字段必须填写具体原因，不能留空
+"""
 
 
 def _load_settings() -> dict:
@@ -94,6 +117,26 @@ def _mcp_server_config() -> dict:
 
 
 
+def _inject_memory_rules() -> None:
+    """
+    向全局 ~/.claude/CLAUDE.md 注入记忆工具使用规范，已存在则跳过。
+
+    参数:
+        无。
+
+    返回值:
+        无。
+    """
+    GLOBAL_CLAUDE_MD_PATH.parent.mkdir(parents=True, exist_ok=True)
+    existing = GLOBAL_CLAUDE_MD_PATH.read_text(encoding="utf-8") if GLOBAL_CLAUDE_MD_PATH.exists() else ""
+    if _MEMORY_RULES_MARKER in existing:
+        print("  CLAUDE.md: memory rules already present")
+        return
+    with GLOBAL_CLAUDE_MD_PATH.open("a", encoding="utf-8") as f:
+        f.write(_MEMORY_RULES)
+    print("  CLAUDE.md: memory rules injected")
+
+
 def _register_hooks() -> None:
     data = _load_settings()
     hooks = data.setdefault("hooks", {})
@@ -148,11 +191,14 @@ def _register_mcp_server() -> None:
 
 def cmd_init(args):
     print("=== CodeTogether Init ===")
-    print(f"\n[1/2] Registering hooks in {SETTINGS_PATH}")
+    print(f"\n[1/3] Registering hooks in {SETTINGS_PATH}")
     _register_hooks()
 
-    print(f"\n[2/2] Registering MCP server in {CLAUDE_CONFIG_PATH}")
+    print(f"\n[2/3] Registering MCP server in {CLAUDE_CONFIG_PATH}")
     _register_mcp_server()
+
+    print(f"\n[3/3] Injecting memory rules in {GLOBAL_CLAUDE_MD_PATH}")
+    _inject_memory_rules()
 
     # --no-start: VSCode 插件模式，只注册不启动 server（server 由插件管理）
     if getattr(args, "no_start", False):
