@@ -14,7 +14,7 @@ from server.models import MemoryFeedbackLog as MemoryFeedbackLogModel
 from server.models import MemorySearchExposure as MemorySearchExposureModel
 from server.models import Session as SessionModel
 from server.routers.auth import get_current_key
-from server.schemas import MemoryCreate, MemoryFeedbackRequest, MemoryOut, MemorySearchRequest, MemoryUpdate
+from server.schemas import MemoryBatchDeleteRequest, MemoryCreate, MemoryFeedbackRequest, MemoryOut, MemorySearchRequest, MemoryUpdate
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 
@@ -345,10 +345,36 @@ def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(ge
     return memory
 
 
+@router.post("/batch-delete", status_code=204)
+def batch_delete_memories(body: MemoryBatchDeleteRequest, db: DBSession = Depends(get_db)):
+    """
+    批量删除指定 ID 的记忆，不存在的 ID 静默跳过。
+
+    参数:
+        body: 包含 ids 列表的请求体。
+        db: 数据库会话。
+
+    返回值:
+        无。
+    """
+    if not body.ids:
+        return
+    # 先确认哪些 ID 真实存在，避免删除不属于当前项目的记忆
+    existing_ids = [
+        row.id for row in db.query(MemoryModel.id).filter(MemoryModel.id.in_(body.ids)).all()
+    ]
+    if not existing_ids:
+        return
+    db.query(MemoryFeedbackLogModel).filter(MemoryFeedbackLogModel.memory_id.in_(existing_ids)).delete(synchronize_session=False)
+    db.query(MemorySearchExposureModel).filter(MemorySearchExposureModel.memory_id.in_(existing_ids)).delete(synchronize_session=False)
+    db.query(MemoryModel).filter(MemoryModel.id.in_(existing_ids)).delete(synchronize_session=False)
+    db.commit()
+
+
 @router.delete("/{memory_id}", status_code=204)
 def delete_memory(memory_id: str, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
-    删除指定记忆，用于拒绝 pending 或 review 记忆。
+    删除指定记忆及其关联曝光与反馈记录。
 
     参数:
         memory_id: 目标记忆 ID。
@@ -361,5 +387,6 @@ def delete_memory(memory_id: str, db: DBSession = Depends(get_db), _key: Optiona
     if not memory:
         raise HTTPException(status_code=404, detail="memory not found")
 
-    db.delete(memory)
+    _delete_memory_with_relations(db, memory)
     db.commit()
+

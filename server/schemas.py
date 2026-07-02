@@ -102,6 +102,10 @@ class MemoryCreate(BaseModel):
     source_session_id: Optional[str] = None
 
 
+class MemoryBatchDeleteRequest(BaseModel):
+    ids: list[str] = Field(..., max_length=500)
+
+
 class MemorySearchRequest(BaseModel):
     query: str
     session_id: str

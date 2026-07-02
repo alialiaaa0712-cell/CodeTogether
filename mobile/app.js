@@ -77,6 +77,8 @@ const state = {
   draftMemoryScope: "current",
   draftTierFilter: "all",
   memoryDrawerOpen: false,
+  memorySelectMode: false,
+  selectedMemoryIds: new Set(),
   inChat: false,
   chatPollTimer: null,
   chatShouldAutoScroll: true,
@@ -399,7 +401,10 @@ function updateJumpToLatestButton() {
  * 主动跳转到聊天列表底部，并清空未读跳转提示。
  */
 function jumpToLatestMessage() {
-  dom.chatHistory.scrollTop = dom.chatHistory.scrollHeight;
+  const el = dom.chatHistory;
+  el.scrollTop = el.scrollHeight;
+  // iOS Safari 有时需要 requestAnimationFrame 才能生效
+  requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
   state.chatShouldAutoScroll = true;
   state.showJumpToLatest = false;
   updateJumpToLatestButton();
@@ -569,13 +574,15 @@ function setMemoryDrawer(open) {
 }
 
 /**
- * 渲染记忆列表。
+ * 渲染记忆列表，支持多选删除模式。
  */
 function renderMemories() {
   if (state.memories.length === 0) {
     dom.memoryList.innerHTML = '<div class="empty">暂无记忆条目</div>';
     return;
   }
+
+  const selectMode = state.memorySelectMode;
 
   dom.memoryList.innerHTML = state.memories.map((memory) => {
     const isReview = memory.status === "review";
@@ -587,15 +594,32 @@ function renderMemories() {
       ? ` · 晋升线 ${escapeHtml(memory.review_score)}`
       : "";
     const feedbackHint = `最近反馈 ${escapeHtml(formatFeedbackTime(memory.last_feedback_at))}`;
+
+    const checked = state.selectedMemoryIds.has(memory.id);
+
+    if (selectMode) {
+      return `
+        <div class="memory-item memory-selectable${checked ? " memory-selected" : ""}" data-id="${escapeHtml(memory.id)}">
+          <div class="memory-row">
+            <label class="memory-checkbox-label">
+              <input type="checkbox" class="memory-checkbox" data-id="${escapeHtml(memory.id)}"${checked ? " checked" : ""}>
+            </label>
+            <strong>${escapeHtml(memory.title)}</strong>
+            <span>${tierLabel}<span class="agent-status-label ${escapeHtml(memory.status)}">${escapeHtml(memory.status)}</span></span>
+          </div>
+          <div class="hint">${escapeHtml(memory.tags || "无标签")} · ${escapeHtml(formatTime(memory.updated_at || memory.created_at))}</div>
+          <div>${escapeHtml(memory.content)}</div>
+        </div>
+      `;
+    }
+
     const actions = state.memoryFilter === "pending"
       ? `<div class="memory-actions">
           <button type="button" data-action="activate" data-id="${escapeHtml(memory.id)}">启用</button>
-          <button type="button" class="danger" data-action="delete" data-id="${escapeHtml(memory.id)}">删除</button>
          </div>`
       : isReview
         ? `<div class="memory-actions">
             <button type="button" data-action="promote" data-id="${escapeHtml(memory.id)}">升为长期</button>
-            <button type="button" class="danger" data-action="delete" data-id="${escapeHtml(memory.id)}">删除</button>
            </div>`
         : "";
     return `
@@ -613,19 +637,85 @@ function renderMemories() {
     `;
   }).join("");
 
-  dom.memoryList.querySelectorAll("button[data-action]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const action = btn.dataset.action;
-      if (action === "activate") {
-        reviewMemory(btn.dataset.id, "active").catch(() => showToast("操作失败"));
-      } else if (action === "promote") {
-        promoteMemory(btn.dataset.id).catch(() => showToast("操作失败"));
-      } else if (action === "delete") {
-        deleteMemory(btn.dataset.id).catch(() => showToast("操作失败"));
-      }
+  if (selectMode) {
+    dom.memoryList.querySelectorAll(".memory-checkbox").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const id = cb.dataset.id;
+        if (cb.checked) state.selectedMemoryIds.add(id);
+        else state.selectedMemoryIds.delete(id);
+        renderMemorySelectBar();
+      });
     });
-  });
+  } else {
+    dom.memoryList.querySelectorAll("button[data-action]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const action = btn.dataset.action;
+        if (action === "activate") {
+          reviewMemory(btn.dataset.id, "active").catch(() => showToast("操作失败"));
+        } else if (action === "promote") {
+          promoteMemory(btn.dataset.id).catch(() => showToast("操作失败"));
+        } else if (action === "delete") {
+          deleteMemory(btn.dataset.id).catch(() => showToast("操作失败"));
+        }
+      });
+    });
+  }
 }
+
+/**
+ * 渲染多选模式底部操作栏。
+ */
+function renderMemorySelectBar() {
+  const bar = document.getElementById("memory-select-bar");
+  if (!bar) return;
+  const count = state.selectedMemoryIds.size;
+  const total = state.memories.length;
+  bar.innerHTML = `
+    <button type="button" class="secondary" id="memory-select-all">${count === total ? "取消全选" : "全选"}</button>
+    <span class="hint">${count > 0 ? `已选 ${count} 条` : "未选择"}</span>
+    <button type="button" class="danger" id="memory-select-delete" ${count === 0 ? "disabled" : ""}>删除选中</button>
+    <button type="button" class="secondary" id="memory-select-cancel">取消</button>
+  `;
+  document.getElementById("memory-select-all").addEventListener("click", () => {
+    if (state.selectedMemoryIds.size === state.memories.length) {
+      state.selectedMemoryIds = new Set();
+    } else {
+      state.selectedMemoryIds = new Set(state.memories.map((m) => m.id));
+    }
+    renderMemories();
+    renderMemorySelectBar();
+  });
+  document.getElementById("memory-select-delete").addEventListener("click", () => {
+    const ids = Array.from(state.selectedMemoryIds);
+    if (!ids.length) return;
+    batchDeleteMemories(ids).catch(() => showToast("批量删除失败"));
+  });
+  document.getElementById("memory-select-cancel").addEventListener("click", exitMemorySelectMode);
+}
+
+/**
+ * 进入多选删除模式。
+ */
+function enterMemorySelectMode() {
+  state.memorySelectMode = true;
+  state.selectedMemoryIds = new Set();
+  const bar = document.getElementById("memory-select-bar");
+  if (bar) bar.hidden = false;
+  renderMemories();
+  renderMemorySelectBar();
+}
+
+/**
+ * 退出多选删除模式。
+ */
+function exitMemorySelectMode() {
+  state.memorySelectMode = false;
+  state.selectedMemoryIds = new Set();
+  const bar = document.getElementById("memory-select-bar");
+  if (bar) bar.hidden = true;
+  renderMemories();
+}
+
 
 async function deleteAgent(sessionId) {
   await fetchJson(`${SERVER}/agents/${sessionId}`, { method: "DELETE" });
@@ -781,6 +871,17 @@ async function deleteMemory(memoryId) {
   await loadMemories();
 }
 
+async function batchDeleteMemories(ids) {
+  await fetchJson(`${SERVER}/memory/batch-delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  showToast(`已删除 ${ids.length} 条记忆`);
+  exitMemorySelectMode();
+  await loadMemories();
+}
+
 function upsertSession(session) {
   const idx = state.sessions.findIndex((s) => s.id === session.id);
   if (idx >= 0) {
@@ -892,6 +993,7 @@ dom.chatForm.addEventListener("submit", (e) => {
 });
 
 dom.memoryFilterOpen.addEventListener("click", () => setMemoryDrawer(true));
+document.getElementById("memory-select-mode-btn").addEventListener("click", enterMemorySelectMode);
 dom.memoryFilterBackdrop.addEventListener("click", () => setMemoryDrawer(false));
 dom.memoryFilterClose.addEventListener("click", () => setMemoryDrawer(false));
 dom.memoryFilterPending.addEventListener("click", () => {

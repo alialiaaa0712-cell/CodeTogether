@@ -1,6 +1,7 @@
 """CodeTogether 记忆 MCP 工具实现。"""
 from typing import Optional
 
+from hooks._common import create_memory as _create_memory
 from hooks._common import memory_feedback as submit_memory_feedback
 from hooks._common import memory_search as search_memories
 
@@ -8,6 +9,43 @@ from mcp_server.session_context import ensure_session_ready, get_current_cwd, re
 
 _ALLOWED_SCORES = {-2, -1, 0, 1, 2}
 
+
+
+def memory_create_tool(title: str, content: str, tags: Optional[str] = None, session_id: Optional[str] = None) -> dict:
+    """
+    由模型主动创建一条短期记忆，在完成阶段性任务时调用。
+
+    参数:
+        title: 记忆标题，简短描述核心结论（10-30字）。
+        content: 记忆正文，描述约束/规则/坑点及其原因（20-200字）。
+        tags: 可选的逗号分隔标签。
+        session_id: 可选显式会话 ID，主要用于调试。
+
+    返回值:
+        包含 session_id 和已创建记忆对象的字典。
+
+    异常:
+        RuntimeError: 当创建失败时抛出。
+    """
+    resolved_session_id = require_session_id(session_id)
+    cwd = get_current_cwd()
+    ensure_session_ready(resolved_session_id, cwd)
+
+    if not title or not title.strip():
+        raise ValueError("title 不能为空")
+    if not content or len(content.strip()) < 20:
+        raise ValueError("content 至少需要 20 个字符")
+    if len(content) > 500:
+        raise ValueError("content 不能超过 500 个字符")
+
+    memory = _create_memory(title.strip(), content.strip(), resolved_session_id, tags)
+    if memory is None:
+        raise RuntimeError("记忆创建失败: 服务端未返回结果")
+
+    return {
+        "session_id": resolved_session_id,
+        "memory": memory,
+    }
 
 
 def memory_search_tool(query: str, limit: int = 3, session_id: Optional[str] = None) -> dict:
