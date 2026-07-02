@@ -2,6 +2,8 @@
 import json
 import os
 import subprocess
+import time
+import urllib.error
 import urllib.request
 
 SERVER = os.environ.get("CODETOGETHER_SERVER", "http://localhost:8000")
@@ -19,6 +21,40 @@ def _auth_headers() -> dict:
     if API_KEY:
         return {"Content-Type": "application/json", "Authorization": f"Bearer {API_KEY}"}
     return {"Content-Type": "application/json"}
+
+
+# 重试延迟序列（秒），共 3 次尝试：首次失败后等 0.5s，再次失败后等 1.0s，最后一次不等待
+_RETRY_DELAYS = (0.5, 1.0, 2.0)
+
+
+def _http_request_with_retry(req: urllib.request.Request) -> None:
+    """
+    带指数退避重试的 HTTP 请求，专用于写操作（POST/PATCH）。
+
+    网络错误或 5xx 时按 _RETRY_DELAYS 间隔重试；4xx 时立即放弃（不重试）。
+    所有重试耗尽后静默跳过，不向上层抛出异常。
+
+    参数:
+        req: 已构造好的 urllib.request.Request 对象。
+
+    返回值:
+        无。
+    """
+    for i, delay in enumerate(_RETRY_DELAYS):
+        try:
+            urllib.request.urlopen(req, timeout=TIMEOUT)
+            return
+        except urllib.error.HTTPError as exc:
+            # 4xx 客户端错误不重试，直接返回
+            if exc.code < 500:
+                return
+            # 5xx 服务端错误：非最后一次则等待后重试
+            if i < len(_RETRY_DELAYS) - 1:
+                time.sleep(delay)
+        except Exception:
+            # 网络错误等：非最后一次则等待后重试
+            if i < len(_RETRY_DELAYS) - 1:
+                time.sleep(delay)
 
 
 def get_session_id() -> str:
@@ -48,7 +84,7 @@ def post_event(payload: dict) -> None:
             headers=_auth_headers(),
             method="POST",
         )
-        urllib.request.urlopen(req, timeout=TIMEOUT)
+        _http_request_with_retry(req)
     except Exception:
         pass
 
@@ -155,7 +191,7 @@ def ensure_session(session_id: str, cwd: str = None, repo_url: str = None) -> No
             headers=_auth_headers(),
             method="POST",
         )
-        urllib.request.urlopen(req, timeout=TIMEOUT)
+        _http_request_with_retry(req)
     except Exception:
         pass
 
@@ -216,7 +252,7 @@ def post_chat_message(session_id: str, content: str, role: str = "user", source_
             headers=_auth_headers(),
             method="POST",
         )
-        urllib.request.urlopen(req, timeout=TIMEOUT)
+        _http_request_with_retry(req)
     except Exception:
         pass
 
@@ -235,7 +271,7 @@ def mark_stopped(session_id: str) -> None:
             headers=_auth_headers(),
             method="PATCH",
         )
-        urllib.request.urlopen(req, timeout=TIMEOUT)
+        _http_request_with_retry(req)
     except Exception:
         pass
 
