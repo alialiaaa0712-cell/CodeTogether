@@ -173,7 +173,7 @@ def memory_feedback(memory_id: str, session_id: str, score: int, reason: str):
         return None
 
 
-def ensure_session(session_id: str, cwd: str = None, repo_url: str = None) -> None:
+def ensure_session(session_id: str, cwd: str = None, repo_url: str = None, parent_id: str = None) -> None:
     """
     确保 session 存在，不存在时静默创建，避免写消息时因 session 缺失而 404。
 
@@ -181,6 +181,7 @@ def ensure_session(session_id: str, cwd: str = None, repo_url: str = None) -> No
         session_id: 目标会话 ID
         cwd: 工作目录（可选）
         repo_url: git remote origin URL（可选）
+        parent_id: 父会话 ID（可选，子 Agent 时传入）
     """
     try:
         payload: dict = {"id": session_id}
@@ -188,6 +189,8 @@ def ensure_session(session_id: str, cwd: str = None, repo_url: str = None) -> No
             payload["cwd"] = cwd
         if repo_url:
             payload["repo_url"] = repo_url
+        if parent_id:
+            payload["parent_id"] = parent_id
         req = urllib.request.Request(
             f"{SERVER}/agents",
             data=json.dumps(payload).encode(),
@@ -223,7 +226,7 @@ def create_memory(title: str, content: str, session_id: str, tags: str = None) -
         req = urllib.request.Request(
             f"{SERVER}/memory",
             data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=_auth_headers(),
             method="POST",
         )
         resp = urllib.request.urlopen(req, timeout=TIMEOUT)
