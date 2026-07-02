@@ -937,6 +937,51 @@ label {
   padding: 18px 12px;
 }
 
+.memory-select-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(241, 245, 250, 0.9);
+  border-bottom: 1px solid rgba(104, 124, 154, 0.12);
+  flex-wrap: wrap;
+}
+
+.memory-select-bar button {
+  width: auto;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+.memory-select-bar button:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.memory-selectable {
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.memory-selected {
+  background: rgba(37, 89, 195, 0.07);
+  border-left: 3px solid var(--accent);
+}
+
+.memory-checkbox-label {
+  display: flex;
+  align-items: center;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.memory-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .toast {
   position: fixed;
   left: 50%;

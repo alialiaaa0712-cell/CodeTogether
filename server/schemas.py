@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # 会话相关 schemas
@@ -98,6 +98,10 @@ class MemoryCreate(BaseModel):
     content: str
     tags: Optional[str] = None
     source_session_id: Optional[str] = None
+
+
+class MemoryBatchDeleteRequest(BaseModel):
+    ids: list[str] = Field(..., max_length=500)
 
 
 class MemorySearchRequest(BaseModel):

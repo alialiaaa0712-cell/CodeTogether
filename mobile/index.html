@@ -6,7 +6,7 @@
   <meta name="description" content="CodeTogether Mobile Web App">
   <title>CodeTogether</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="style.css?v=20260612p">
+  <link rel="stylesheet" href="style.css?v=20260702b">
 </head>
 <body>
   <header class="topbar">
@@ -63,8 +63,12 @@
           <div>
             <strong>审核台</strong>
           </div>
-          <button id="memory-filter-open" class="secondary filter-open-btn" type="button">筛选</button>
+          <div style="display:flex;gap:8px">
+            <button id="memory-select-mode-btn" class="secondary danger" type="button">删除</button>
+            <button id="memory-filter-open" class="secondary filter-open-btn" type="button">筛选</button>
+          </div>
         </div>
+        <div id="memory-select-bar" class="memory-select-bar" hidden></div>
         <div id="memory-filter-summary" class="filter-summary" aria-live="polite"></div>
         <div class="memory-board-list">
           <div id="memory-list" class="memory-list"></div>
@@ -126,6 +130,6 @@
   </nav>
 
   <div id="toast" class="toast"></div>
-  <script src="app.js?v=20260612j"></script>
+  <script src="app.js?v=20260702b"></script>
 </body>
 </html>
