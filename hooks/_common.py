@@ -23,8 +23,8 @@ def _auth_headers() -> dict:
     return {"Content-Type": "application/json"}
 
 
-# 重试延迟序列（秒），共 3 次尝试：首次失败后等 0.5s，再次失败后等 1.0s，最后一次不等待
-_RETRY_DELAYS = (0.5, 1.0, 2.0)
+# 重试间隔序列（秒）：第1次失败后等 0.5s，第2次失败后等 1.0s；共最多 3 次尝试
+_RETRY_DELAYS = (0.5, 1.0)
 
 
 def _http_request_with_retry(req: urllib.request.Request) -> None:
