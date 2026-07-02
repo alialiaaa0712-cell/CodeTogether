@@ -9,7 +9,7 @@ import urllib.error
 
 
 def test_post_event_retries_on_network_error():
-    """post_event 在网络错误时应重试最多 3 次。"""
+    """post_event 在网络错误时应重试最多 3 次（_RETRY_DELAYS 有 2 个间隔 = 3 次尝试）。"""
     import hooks._common as _common
 
     call_count = 0
@@ -22,7 +22,7 @@ def test_post_event_retries_on_network_error():
          patch("urllib.request.urlopen", side_effect=fake_urlopen):
         _common.post_event({"session_id": "s1", "type": "test"})
 
-    assert call_count == 3
+    assert call_count == len(_common._RETRY_DELAYS) + 1  # 间隔数 + 1 = 尝试次数
 
 
 def test_post_event_no_retry_on_4xx():
