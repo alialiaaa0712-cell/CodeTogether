@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -177,6 +178,8 @@ def _run_startup_migrations() -> None:
 if not os.getenv("TESTING"):
     _run_startup_migrations()
 
+manager = ConnectionManager()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -188,7 +191,6 @@ async def lifespan(app: FastAPI):
     返回值:
         无；使用 async generator 协议，yield 前为启动阶段，yield 后为关闭阶段。
     """
-    import asyncio
     from server import broadcast
 
     # 初始化广播模块：连接 Redis（若配置了 REDIS_URL），注入本进程 WebSocket 管理器
@@ -237,16 +239,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CodeTogether", lifespan=lifespan)
 
+app.state.ws_manager = manager
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-manager = ConnectionManager()
-app.state.ws_manager = manager
-
 
 _mobile_dir = Path(__file__).parent.parent / "mobile"
 app.mount("/mobile", StaticFiles(directory=str(_mobile_dir), html=True), name="mobile")
