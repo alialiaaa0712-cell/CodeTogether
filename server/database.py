@@ -21,7 +21,14 @@ if _is_sqlite:
         connect_args={"check_same_thread": False},
     )
 else:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=20, max_overflow=40)
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=10,
+        max_overflow=20,
+        pool_timeout=30,
+        pool_recycle=3600,  # 1 小时回收连接，防止 MySQL wait_timeout 断连
+    )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
