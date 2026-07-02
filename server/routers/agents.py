@@ -117,20 +117,19 @@ def _ensure_project_for_session(body: SessionCreate, db: DBSession) -> Optional[
     return _ensure_project_for_cwd(body.cwd, db)
 
 
-async def _broadcast_session_update(request: Request, session: SessionModel) -> None:
+async def _broadcast_session_update(session: SessionModel) -> None:
     """
-    通过统一的 agent_update 消息广播最新会话快照，确保前后端字段结构一致。
+    广播最新会话快照给所有连接的手机端。
 
     参数:
-        request: 当前请求对象，用于读取应用上的 WebSocket 管理器。
         session: 已完成提交并刷新的会话 ORM 对象。
 
     返回值:
         无。
     """
     try:
-        manager = request.app.state.ws_manager
-        await manager.broadcast({
+        from server import broadcast
+        await broadcast.publish({
             "type": "agent_update",
             "data": SessionOut.model_validate(session).model_dump(),
         })
@@ -179,7 +178,7 @@ async def create_session(body: SessionCreate, request: Request, db: DBSession = 
     db.add(session)
     db.commit()
     db.refresh(session)
-    await _broadcast_session_update(request, session)
+    await _broadcast_session_update(session)
     return session
 
 
@@ -210,7 +209,7 @@ async def update_status(session_id: str, body: StatusUpdate, request: Request, d
         session.ended_at = time.time()
     db.commit()
     db.refresh(session)
-    await _broadcast_session_update(request, session)
+    await _broadcast_session_update(session)
 
     if body.status == "stopped":
         pass  # 记忆由 Claude 通过 memory_create MCP 工具主动创建，不再自动提炼
@@ -238,7 +237,7 @@ async def update_parent(session_id: str, body: ParentUpdate, request: Request, d
     session.parent_id = body.parent_id
     db.commit()
     db.refresh(session)
-    await _broadcast_session_update(request, session)
+    await _broadcast_session_update(session)
     return session
 
 
@@ -270,7 +269,7 @@ async def update_model(session_id: str, body: ModelUpdate, request: Request, db:
     session.model = body.model
     db.commit()
     db.refresh(session)
-    await _broadcast_session_update(request, session)
+    await _broadcast_session_update(session)
     return session
 
 
@@ -294,7 +293,7 @@ async def update_notes(session_id: str, body: NotesUpdate, request: Request, db:
     session.notes = body.notes
     db.commit()
     db.refresh(session)
-    await _broadcast_session_update(request, session)
+    await _broadcast_session_update(session)
     return session
 
 
@@ -316,8 +315,8 @@ async def delete_session(session_id: str, request: Request, db: DBSession = Depe
     db.delete(session)
     db.commit()
     try:
-        manager = request.app.state.ws_manager
-        await manager.broadcast({"type": "agent_deleted", "data": {"id": session_id}})
+        from server import broadcast
+        await broadcast.publish({"type": "agent_deleted", "data": {"id": session_id}})
     except Exception:
         pass
 

@@ -79,8 +79,8 @@ async def send_message(body: MessageCreate, request: Request, db: DBSession = De
     db.refresh(msg)
 
     try:
-        manager = request.app.state.ws_manager
-        await manager.broadcast({
+        from server import broadcast
+        await broadcast.publish({
             "type": "chat_message",
             "data": {"session_id": msg.session_id, "role": msg.role},
         })

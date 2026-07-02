@@ -226,6 +226,14 @@ app.add_middleware(
 manager = ConnectionManager()
 app.state.ws_manager = manager
 
+from server import broadcast as _broadcast_module
+import asyncio as _asyncio
+
+# 同步初始化 broadcast 模块（注入 manager，不连接 Redis）
+_asyncio.get_event_loop().run_until_complete(_broadcast_module.init(manager)) if False else None
+# 直接注入 manager，init 需在 lifespan 中异步完成；这里先赋值确保进程内广播可用
+_broadcast_module._manager = manager
+
 _mobile_dir = Path(__file__).parent.parent / "mobile"
 app.mount("/mobile", StaticFiles(directory=str(_mobile_dir), html=True), name="mobile")
 

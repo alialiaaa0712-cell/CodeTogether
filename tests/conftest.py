@@ -32,6 +32,20 @@ def db(engine):
     finally:
         session.close()
 
+@pytest.fixture(autouse=True)
+def _restore_broadcast_manager():
+    """
+    每个测试前后还原 broadcast._manager，防止 test_broadcast.py 中替换 MagicMock
+    后污染后续依赖真实 ConnectionManager 的 WebSocket 测试。
+    """
+    from server import broadcast as bc
+    from server.main import manager as real_manager
+    original = bc._manager
+    bc._manager = real_manager
+    yield
+    bc._manager = original
+
+
 @pytest.fixture
 def client(engine):
     from server.models import ApiKey
@@ -56,5 +70,3 @@ def client(engine):
 def auth_headers():
     """返回空认证头，测试中已通过 dependency_overrides 跳过 auth 验证。"""
     return {}
-
-

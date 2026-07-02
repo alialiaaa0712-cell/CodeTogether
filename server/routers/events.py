@@ -15,20 +15,19 @@ from server.schemas import EventCreate, EventOut, SessionOut
 router = APIRouter(prefix="/events", tags=["events"])
 
 
-async def _broadcast_session_update(request: Request, session: SessionModel) -> None:
+async def _broadcast_session_update(session: SessionModel) -> None:
     """
     在事件导致会话首次出现时同步广播会话快照，避免移动端状态页漏掉新会话。
 
     参数:
-        request: 当前请求对象，用于访问应用级 WebSocket 管理器。
         session: 需要广播的会话 ORM 对象。
 
     返回值:
         无。
     """
     try:
-        manager = request.app.state.ws_manager
-        await manager.broadcast({
+        from server import broadcast
+        await broadcast.publish({
             "type": "agent_update",
             "data": SessionOut.model_validate(session).model_dump(),
         })
@@ -91,13 +90,13 @@ async def receive_event(
     db.refresh(event)
 
     if created_session is not None:
-        await _broadcast_session_update(request, created_session)
+        await _broadcast_session_update(created_session)
     elif updated_session is not None:
-        await _broadcast_session_update(request, updated_session)
+        await _broadcast_session_update(updated_session)
 
     try:
-        manager = request.app.state.ws_manager
-        await manager.broadcast({
+        from server import broadcast
+        await broadcast.publish({
             "type": "event",
             "data": EventOut.model_validate(event).model_dump(),
         })
