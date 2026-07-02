@@ -48,13 +48,16 @@ def _http_request_with_retry(req: urllib.request.Request) -> None:
             # 4xx 客户端错误不重试，直接返回
             if exc.code < 500:
                 return
-            # 5xx 服务端错误：非最后一次则等待后重试
-            if i < len(_RETRY_DELAYS) - 1:
-                time.sleep(delay)
+            # 5xx 服务端错误：等待后重试
+            time.sleep(delay)
         except Exception:
-            # 网络错误等：非最后一次则等待后重试
-            if i < len(_RETRY_DELAYS) - 1:
-                time.sleep(delay)
+            # 网络错误等：等待后重试
+            time.sleep(delay)
+    # 最后一次尝试（无等待）
+    try:
+        urllib.request.urlopen(req, timeout=TIMEOUT)
+    except Exception:
+        pass
 
 
 def get_session_id() -> str:
