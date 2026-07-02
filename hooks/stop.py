@@ -236,24 +236,32 @@ def main():
         return
 
     session_id = data.get("session_id") or ""
+    child_agent_id = data.get("agent_id")
+    if child_agent_id:
+        agent_session_id = child_agent_id
+        parent_session_id = session_id
+    else:
+        agent_session_id = session_id
+        parent_session_id = None
     cwd = data.get("cwd") or ""
 
     _common.post_event({
-        "session_id": session_id,
+        "session_id": agent_session_id,
         "type": "stop",
         "cwd": cwd,
+        "parent_session_id": parent_session_id,
     })
 
-    if session_id:
-        sync_messages(session_id, cwd)
+    if agent_session_id:
+        sync_messages(agent_session_id, cwd)
 
-    messages = _common.poll_messages(session_id) if session_id else []
+    messages = _common.poll_messages(agent_session_id) if agent_session_id else []
     if messages:
         combined = "\n".join(m["content"] for m in messages)
         print(json.dumps({"continue": True, "message": combined}), flush=True)
         return
 
-    _common.mark_stopped(session_id)
+    _common.mark_stopped(agent_session_id)
 
 
 if __name__ == "__main__":

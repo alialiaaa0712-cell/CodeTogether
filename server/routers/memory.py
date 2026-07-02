@@ -144,7 +144,9 @@ def _record_search_exposures(
 
 
 def _was_exposed_to_session(db: DBSession, session_id: str, memory_id: str, now: float) -> bool:
-    """判断指定记忆是否曾在曝光有效期内返回给当前会话。
+    """判断指定记忆是否曾在曝光有效期内返回给当前会话或其父/子会话。
+
+    父子 session 共享曝光上下文：子 Agent 搜索到的记忆，父 Agent 可以反馈；反之亦然。
 
     参数:
         db: 数据库会话。
@@ -155,8 +157,17 @@ def _was_exposed_to_session(db: DBSession, session_id: str, memory_id: str, now:
     返回值:
         若命中有效曝光记录则返回 True，否则返回 False。
     """
+    session = db.get(SessionModel, session_id)
+    # 收集需要检查的 session ID：自身 + 父 session + 所有子 session
+    related_ids = {session_id}
+    if session:
+        if session.parent_id:
+            related_ids.add(session.parent_id)
+        child_ids = db.query(SessionModel.id).filter(SessionModel.parent_id == session_id).all()
+        related_ids.update(row.id for row in child_ids)
+
     return db.query(MemorySearchExposureModel).filter(
-        MemorySearchExposureModel.session_id == session_id,
+        MemorySearchExposureModel.session_id.in_(related_ids),
         MemorySearchExposureModel.memory_id == memory_id,
         MemorySearchExposureModel.exposed_at >= now - _EXPOSURE_TTL_SECONDS,
     ).first() is not None

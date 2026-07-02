@@ -16,6 +16,8 @@ from server.database import SessionLocal, get_db
 from server.models import ApiKey
 from server.models import Event as EventModel
 from server.models import Memory as MemoryModel
+from server.models import MemoryFeedbackLog as MemoryFeedbackLogModel
+from server.models import MemorySearchExposure as MemorySearchExposureModel
 from server.models import Message as MessageModel
 from server.models import Project as ProjectModel
 from server.models import Session as SessionModel
@@ -310,8 +312,18 @@ async def delete_session(session_id: str, request: Request, db: DBSession = Depe
     session = db.get(SessionModel, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")
-    db.query(MessageModel).filter(MessageModel.session_id == session_id).delete()
-    db.query(EventModel).filter(EventModel.session_id == session_id).delete()
+    # 先解除子 session 的外键引用，避免自引用约束阻断删除
+    db.query(SessionModel).filter(SessionModel.parent_id == session_id).update(
+        {SessionModel.parent_id: None}, synchronize_session=False
+    )
+    db.query(MemorySearchExposureModel).filter(MemorySearchExposureModel.session_id == session_id).delete(synchronize_session=False)
+    db.query(MemoryFeedbackLogModel).filter(MemoryFeedbackLogModel.session_id == session_id).delete(synchronize_session=False)
+    # Memory.source_session_id 是 nullable 外键，置空而非删除，保留记忆本身
+    db.query(MemoryModel).filter(MemoryModel.source_session_id == session_id).update(
+        {MemoryModel.source_session_id: None}, synchronize_session=False
+    )
+    db.query(MessageModel).filter(MessageModel.session_id == session_id).delete(synchronize_session=False)
+    db.query(EventModel).filter(EventModel.session_id == session_id).delete(synchronize_session=False)
     db.delete(session)
     db.commit()
     try:
