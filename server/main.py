@@ -180,7 +180,22 @@ if not os.getenv("TESTING"):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """管理应用生命周期：启动定时任务，退出时关闭。"""
+    """管理应用生命周期：初始化广播模块，启动定时任务，退出时清理。
+
+    参数:
+        app: FastAPI 应用实例。
+
+    返回值:
+        无；使用 async generator 协议，yield 前为启动阶段，yield 后为关闭阶段。
+    """
+    import asyncio
+    from server import broadcast
+
+    # 初始化广播模块：连接 Redis（若配置了 REDIS_URL），注入本进程 WebSocket 管理器
+    await broadcast.init(manager)
+    # 启动 Redis 订阅协程，将 channel 消息广播给本进程所有 WebSocket 连接
+    subscribe_task = asyncio.create_task(broadcast.subscribe_and_forward(manager))
+
     scheduler = None
     if not os.getenv("TESTING"):
         scheduler = BackgroundScheduler()
@@ -210,6 +225,12 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_expire_pending_messages, "interval", minutes=1)
         scheduler.start()
     yield
+    # 取消订阅协程，等待其干净退出
+    subscribe_task.cancel()
+    try:
+        await subscribe_task
+    except asyncio.CancelledError:
+        pass
     if scheduler is not None:
         scheduler.shutdown(wait=False)
 
@@ -226,13 +247,6 @@ app.add_middleware(
 manager = ConnectionManager()
 app.state.ws_manager = manager
 
-from server import broadcast as _broadcast_module
-import asyncio as _asyncio
-
-# 同步初始化 broadcast 模块（注入 manager，不连接 Redis）
-_asyncio.get_event_loop().run_until_complete(_broadcast_module.init(manager)) if False else None
-# 直接注入 manager，init 需在 lifespan 中异步完成；这里先赋值确保进程内广播可用
-_broadcast_module._manager = manager
 
 _mobile_dir = Path(__file__).parent.parent / "mobile"
 app.mount("/mobile", StaticFiles(directory=str(_mobile_dir), html=True), name="mobile")
