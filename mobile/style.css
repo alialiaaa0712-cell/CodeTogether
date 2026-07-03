@@ -437,6 +437,11 @@ label {
   color: var(--warning);
 }
 
+.status-badge.review {
+  background: rgba(37, 89, 195, 0.10);
+  color: var(--accent);
+}
+
 .agent-delete-btn {
   display: inline-flex;
   align-items: center;

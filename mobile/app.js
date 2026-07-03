@@ -268,7 +268,7 @@ function agentLabel(session) {
  *   对应的中文文字。
  */
 function statusText(status) {
-  const map = { active: "运行中", stopped: "停止", pending: "等待" };
+  const map = { active: "运行中", stopped: "停止", pending: "等待", review: "审查中" };
   return map[status] || status;
 }
 
