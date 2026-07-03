@@ -83,6 +83,7 @@ const state = {
   chatPollTimer: null,
   chatShouldAutoScroll: true,
   showJumpToLatest: false,
+  isAdmin: false,
 };
 
 const dom = {
@@ -94,6 +95,7 @@ const dom = {
     agents: document.getElementById("view-agents"),
     chat: document.getElementById("view-chat"),
     memory: document.getElementById("view-memory"),
+    settings: document.getElementById("view-settings"),
   },
   projectGroups: document.getElementById("project-groups"),
   agentOverview: document.getElementById("agent-overview"),
@@ -125,6 +127,12 @@ const dom = {
   loginKeyInput: document.getElementById("login-key-input"),
   loginSubmit: document.getElementById("login-submit"),
   loginError: document.getElementById("login-error"),
+  settingsApiKey: document.getElementById("settings-api-key"),
+  settingsBaseUrl: document.getElementById("settings-base-url"),
+  settingsModel: document.getElementById("settings-model"),
+  settingsSave: document.getElementById("settings-save"),
+  settingsMsg: document.getElementById("settings-msg"),
+  settingsReadonlyHint: document.getElementById("settings-readonly-hint"),
 };
 
 /**
@@ -378,6 +386,11 @@ function switchTab(tab) {
     loadMemories().catch((e) => {
       console.error("加载记忆列表失败", e);
       showToast("记忆列表加载失败");
+    });
+  }
+  if (tab === "settings") {
+    loadSettings().catch((e) => {
+      console.error("加载设置失败", e);
     });
   }
 }
@@ -909,6 +922,40 @@ function buildWsUrl() {
   return `${WS_PROTOCOL}//${location.host}/ws${key ? "?api_key=" + encodeURIComponent(key) : ""}`;
 }
 
+/**
+ * 加载设置页配置，判断 admin 权限后决定是否显示保存按钮。
+ *
+ * 调用 GET /config 获取配置（api_key 脱敏），再调用 GET /admin/keys 判断是否 admin。
+ * 非 admin 时输入框禁用，显示只读提示。
+ *
+ * 返回值:
+ *   无。
+ */
+async function loadSettings() {
+  try {
+    const configs = await fetchJson(`${SERVER}/config`);
+    const map = Object.fromEntries(configs.map((c) => [c.key, c.value || ""]));
+    dom.settingsApiKey.value = map.extractor_api_key || "";
+    dom.settingsBaseUrl.value = map.extractor_base_url || "";
+    dom.settingsModel.value = map.extractor_model || "";
+  } catch (_) {}
+
+  try {
+    await fetchJson(`${SERVER}/admin/keys`);
+    state.isAdmin = true;
+  } catch (_) {
+    state.isAdmin = false;
+  }
+
+  const readonly = !state.isAdmin;
+  dom.settingsApiKey.disabled = readonly;
+  dom.settingsBaseUrl.disabled = readonly;
+  dom.settingsModel.disabled = readonly;
+  dom.settingsSave.style.display = readonly ? "none" : "";
+  dom.settingsReadonlyHint.style.display = readonly ? "" : "none";
+  dom.settingsMsg.style.display = "none";
+}
+
 function connectWebSocket() {
   const ws = new WebSocket(buildWsUrl());
   ws.onopen = () => { setConnectionStatus(true); state.reconnectDelay = 1000; };
@@ -1082,6 +1129,33 @@ if (dom.loginSubmit) {
 if (dom.loginKeyInput) {
   dom.loginKeyInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") dom.loginSubmit.click();
+  });
+}
+
+if (dom.settingsSave) {
+  dom.settingsSave.addEventListener("click", async () => {
+    dom.settingsSave.disabled = true;
+    dom.settingsMsg.style.display = "none";
+    try {
+      await fetchJson(`${SERVER}/config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          extractor_api_key: dom.settingsApiKey.value.trim() || null,
+          extractor_base_url: dom.settingsBaseUrl.value.trim() || null,
+          extractor_model: dom.settingsModel.value.trim() || null,
+        }),
+      });
+      dom.settingsMsg.textContent = "已保存";
+      dom.settingsMsg.style.color = "var(--accent, #007aff)";
+      dom.settingsMsg.style.display = "";
+    } catch (_) {
+      dom.settingsMsg.textContent = "保存失败，请重试";
+      dom.settingsMsg.style.color = "#e53e3e";
+      dom.settingsMsg.style.display = "";
+    } finally {
+      dom.settingsSave.disabled = false;
+    }
   });
 }
 
