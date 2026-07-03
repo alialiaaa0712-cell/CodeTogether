@@ -7,27 +7,6 @@ from server.main import app
 from server.routers.auth import get_current_key
 
 
-@pytest.fixture
-def client_no_auth(engine):
-    """提供一个不注入认证跳过的客户端，用于测试 auth 逻辑本身。"""
-    from sqlalchemy.orm import sessionmaker
-    from server.database import get_db
-    TestingSessionLocal = sessionmaker(bind=engine)
-    def override_get_db():
-        session = TestingSessionLocal()
-        try:
-            yield session
-        finally:
-            session.close()
-    # 保存并清除 get_current_key 的 override，确保真实认证路径生效
-    saved = app.dependency_overrides.pop(get_current_key, None)
-    app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app)
-    # 测试结束后恢复原 override，避免污染其他测试
-    if saved is not None:
-        app.dependency_overrides[get_current_key] = saved
-
-
 def test_post_events_requires_auth(client_no_auth):
     """数据库存在活跃 key 时，无 Bearer Token 的写请求应返回 401。"""
     import hashlib

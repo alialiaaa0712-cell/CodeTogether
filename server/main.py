@@ -22,8 +22,9 @@ from server.models import ApiKey as ApiKeyModel
 from server.models import Memory as MemoryModel
 from server.models import Message as MessageModel
 from server.models import Session as SessionModel
-from server.routers import agents, chat, events, memory, auth as auth_router
+from server.routers import agents, chat, events, memory, auth as auth_router, config as config_router
 from server.routers.auth import get_current_key, seed_admin_key, _hash_key
+from server.routers.config import seed_default_config
 from server.services.housekeeping import run_memory_housekeeping
 from server.ws_manager import ConnectionManager
 
@@ -171,6 +172,15 @@ def _run_startup_migrations() -> None:
     db = SessionLocal()
     try:
         seed_admin_key(db)
+        seed_default_config(db)
+        # 从数据库加载配置，写入 extractor 运行时变量
+        from server.services import extractor as _extractor
+        from server.models import ServerConfig as ServerConfigModel
+        rows = db.query(ServerConfigModel).all()
+        config_map = {r.key: r.value or "" for r in rows}
+        _extractor._api_key = config_map.get("extractor_api_key", "")
+        _extractor._base_url = config_map.get("extractor_base_url", "https://oneapi-comate.baidu-int.com/v1")
+        _extractor._model = config_map.get("extractor_model", "gpt-5.4")
     finally:
         db.close()
 
@@ -256,6 +266,7 @@ app.include_router(events.router)
 app.include_router(chat.router)
 app.include_router(memory.router)
 app.include_router(auth_router.router)
+app.include_router(config_router.router)
 
 
 @app.websocket("/ws")
