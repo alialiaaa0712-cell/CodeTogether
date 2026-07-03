@@ -7,6 +7,13 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
+try:
+    from server.database import SessionLocal
+    from server.models import ServerConfig as _ServerConfig
+except Exception:
+    SessionLocal = None  # type: ignore[assignment]
+    _ServerConfig = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 # 运行时配置变量，由 /config PUT 端点写入，优先于环境变量
@@ -70,9 +77,22 @@ def extract_memories(
     返回值:
         过滤后的记忆列表；失败时返回空列表。
     """
-    api_key = _api_key or os.getenv("CT_EXTRACTOR_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN", "")
-    base_url = _base_url or os.getenv("CT_EXTRACTOR_BASE_URL", "https://oneapi-comate.baidu-int.com/v1")
-    model = _model or os.getenv("CT_EXTRACTOR_MODEL", "gpt-5.4")
+    # 每次调用时从数据库读取最新配置，确保多 worker 场景下配置同步
+    db_config: dict = {}
+    try:
+        if SessionLocal is not None and _ServerConfig is not None:
+            _db = SessionLocal()
+            try:
+                rows = _db.query(_ServerConfig).all()
+                db_config = {r.key: r.value or "" for r in rows}
+            finally:
+                _db.close()
+    except Exception:
+        pass
+
+    api_key = db_config.get("extractor_api_key") or os.getenv("CT_EXTRACTOR_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN", "")
+    base_url = db_config.get("extractor_base_url") or os.getenv("CT_EXTRACTOR_BASE_URL", "https://oneapi-comate.baidu-int.com/v1")
+    model = db_config.get("extractor_model") or os.getenv("CT_EXTRACTOR_MODEL", "gpt-5.4")
     client = OpenAI(api_key=api_key, base_url=base_url)
     try:
         resp = client.chat.completions.create(
