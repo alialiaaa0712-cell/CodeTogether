@@ -766,8 +766,7 @@ label {
 }
 
 .pill,
-.tier-filter button,
-.tab-btn {
+.tier-filter button {
   flex: 1;
   background: rgba(237, 242, 248, 0.96);
   color: var(--text-soft);
@@ -776,11 +775,45 @@ label {
   padding: 10px 12px;
 }
 
+/* tab 按钮：无背景色，底部横线指示选中态 */
+.tab-btn {
+  flex: 1;
+  background: none;
+  color: var(--text-soft);
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+  padding: 8px 12px 6px;
+  font-size: 12px;
+  font-weight: 500;
+  position: relative;
+}
+
+/* tab 选中态：accent 色文字 + 底部横线伪元素 */
+.tab-btn.active {
+  background: none;
+  color: var(--accent);
+  font-weight: 600;
+  border: none;
+}
+
+.tab-btn.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* 共享选中态：深色背景（不含 tab-btn，tab-btn 用独立横线样式） */
 .pill.active,
 .memory-scope-switch button.active,
 .memory-filter-row button.active,
-.tier-filter button.active,
-.tab-btn.active {
+.tier-filter button.active {
   background: rgba(22, 32, 51, 0.94);
   color: #fff;
   border-color: rgba(22, 32, 51, 0.94);
@@ -958,10 +991,9 @@ label {
   bottom: 0;
   z-index: 100;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  padding: 10px 12px max(10px, env(safe-area-inset-bottom));
-  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  padding: 4px 12px max(14px, env(safe-area-inset-bottom));
   background: rgba(244, 247, 251, 0.96);
   border-top: 1px solid rgba(97, 117, 149, 0.12);
   backdrop-filter: blur(16px);
