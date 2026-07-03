@@ -265,7 +265,7 @@ function agentLabel(session) {
  * 将 Agent 状态值转换为中文显示文字。
  *
  * 参数:
- *   status: 状态字符串（active/stopped/pending）。
+ *   status: 状态字符串（active/stopped/pending/review）。
  *
  * 返回值:
  *   对应的中文文字。

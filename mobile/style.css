@@ -361,7 +361,6 @@ label {
   text-align: left;
   color: var(--text);
   font-weight: 400;
-  overflow: hidden;
 }
 
 .agent-card.active {
