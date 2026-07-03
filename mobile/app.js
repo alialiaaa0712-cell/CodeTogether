@@ -200,10 +200,13 @@ function showToast(text) {
 }
 
 /**
- * 更新页面顶部的连接状态样式与文案。
+ * 更新页面顶部的连接状态徽章文字和样式。
+ *
+ * 参数:
+ *   connected: 是否已连接。
  */
 function setConnectionStatus(connected) {
-  dom.connStatus.textContent = connected ? "已连接" : "未连接";
+  dom.connStatus.textContent = connected ? "● 已连接" : "未连接";
   dom.connStatus.className = `conn-status ${connected ? "connected" : "disconnected"}`;
 }
 
@@ -287,10 +290,10 @@ function renderAgentOverview() {
     { label: "在线中", value: activeCount },
     { label: "项目", value: projectCount },
   ];
-  dom.agentOverview.innerHTML = cards.map((card) => `
+  dom.agentOverview.innerHTML = cards.map((card, i) => `
     <div class="overview-tile">
       <span class="overview-label">${escapeHtml(card.label)}</span>
-      <span class="overview-value">${escapeHtml(card.value)}</span>
+      <span class="overview-value" style="${i === 1 ? 'color:var(--accent)' : ''}">${escapeHtml(String(card.value))}</span>
     </div>
   `).join("");
 }
