@@ -242,6 +242,37 @@ function projectLabel(session) {
 }
 
 /**
+ * 生成 Agent 卡片显示名称，取 cwd 最后一段路径。
+ *
+ * 参数:
+ *   session: Session 对象。
+ *
+ * 返回值:
+ *   显示名称字符串。
+ */
+function agentLabel(session) {
+  if (session.cwd) {
+    const parts = session.cwd.replace(/\/$/, "").split("/");
+    return parts[parts.length - 1] || session.id.slice(0, 8);
+  }
+  return session.id.slice(0, 8);
+}
+
+/**
+ * 将 Agent 状态值转换为中文显示文字。
+ *
+ * 参数:
+ *   status: 状态字符串（active/stopped/pending）。
+ *
+ * 返回值:
+ *   对应的中文文字。
+ */
+function statusText(status) {
+  const map = { active: "运行中", stopped: "停止", pending: "等待" };
+  return map[status] || status;
+}
+
+/**
  * 渲染首页概览卡，展示主 Agent 数、在线数和项目数。
  */
 function renderAgentOverview() {
@@ -290,14 +321,17 @@ function renderAgents() {
       <div class="project-group">
         <div class="project-label">${escapeHtml(project)}</div>
         ${sessions.map((s) => `
-          <button class="agent-card" type="button" data-session-id="${escapeHtml(s.id)}">
+          <button class="agent-card ${escapeHtml(s.status)}" type="button" data-session-id="${escapeHtml(s.id)}">
             <div class="agent-card-row">
-              <span class="status-dot ${escapeHtml(s.status)}"></span>
-              <span class="agent-id">${escapeHtml(s.id)}</span>
-              <span class="agent-status-label ${escapeHtml(s.status)}">${escapeHtml(s.status)}</span>
-              <span class="agent-delete-btn" role="button" data-delete-id="${escapeHtml(s.id)}" title="删除">✕</span>
+              <div class="agent-card-info">
+                <span class="agent-name">${escapeHtml(agentLabel(s))}</span>
+                <span class="agent-time">${escapeHtml(formatTime(s.started_at))}</span>
+              </div>
+              <div class="agent-card-right">
+                <span class="status-badge ${escapeHtml(s.status)}">${escapeHtml(statusText(s.status))}</span>
+                <span class="agent-delete-btn" role="button" data-delete-id="${escapeHtml(s.id)}" title="删除">✕</span>
+              </div>
             </div>
-            <div class="hint">${escapeHtml(formatTime(s.started_at))}</div>
           </button>
         `).join("")}
       </div>

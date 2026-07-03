@@ -353,56 +353,88 @@ label {
 .agent-card {
   width: 100%;
   background: rgba(255, 255, 255, 0.90);
-  border: 1px solid rgba(104, 124, 154, 0.12);
-  border-radius: 22px;
-  padding: 14px 15px;
-  margin-bottom: 10px;
-  box-shadow: var(--shadow-soft);
+  border: 1px solid rgba(104, 124, 154, 0.10);
+  border-left: 4px solid var(--line);
+  border-radius: 16px;
+  padding: 13px 14px;
+  margin-bottom: 8px;
+  box-shadow: 0 3px 12px rgba(37, 89, 195, 0.06);
   text-align: left;
   color: var(--text);
   font-weight: 400;
+  overflow: hidden;
+}
+
+.agent-card.active {
+  border-left-color: var(--success);
+}
+
+.agent-card.stopped {
+  border-left-color: var(--line);
+  background: rgba(255, 255, 255, 0.75);
 }
 
 .agent-card-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-.agent-id {
+.agent-card-info {
   flex: 1;
+  min-width: 0;
+}
+
+.agent-name {
+  display: block;
   font-size: 13px;
-  font-family: "SF Mono", "Menlo", monospace;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.agent-card.stopped .agent-name {
+  color: var(--text-soft);
+}
+
+.agent-time {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 3px;
+}
+
+.agent-card-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.status-badge {
+  font-size: 10px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.agent-status-label {
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-weight: 600;
-}
-
-.agent-status-label.active {
+.status-badge.active {
   background: rgba(31, 138, 98, 0.12);
   color: var(--success);
 }
 
-.agent-status-label.stopped {
-  background: rgba(113, 129, 151, 0.12);
-  color: var(--text-soft);
+.status-badge.stopped {
+  background: var(--bg);
+  color: var(--text-faint);
+  font-weight: 500;
 }
 
-.agent-status-label.pending {
+.status-badge.pending {
   background: rgba(184, 122, 44, 0.12);
   color: var(--warning);
-}
-
-.agent-status-label.review {
-  background: rgba(37, 89, 195, 0.12);
-  color: var(--accent);
 }
 
 .agent-delete-btn {
