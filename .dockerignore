@@ -1,0 +1,12 @@
+vscode-extension/
+.git/
+__pycache__/
+*.pyc
+*.pyo
+tests/
+docs/
+*.md
+.env
+.env.*
+.claude/
+mobile/node_modules/
