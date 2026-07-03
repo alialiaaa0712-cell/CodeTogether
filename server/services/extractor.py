@@ -9,6 +9,12 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
+# 运行时配置变量，由 /config PUT 端点写入，优先于环境变量
+# 服务启动时从 server_config 表加载（见 server/main.py _run_startup_migrations）
+_api_key: str = ""
+_base_url: str = ""
+_model: str = ""
+
 _PROMPT = """你是一个知识提炼助手。请只提炼值得未来 Agent 反复复用的项目规则、约束、坑点、边界。
 禁止输出：
 1. 操作流水（运行了什么命令、改了哪些文件、测试通过了）
@@ -64,11 +70,10 @@ def extract_memories(
     返回值:
         过滤后的记忆列表；失败时返回空列表。
     """
-    client = OpenAI(
-        api_key=os.getenv("CT_EXTRACTOR_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN", ""),
-        base_url=os.getenv("CT_EXTRACTOR_BASE_URL", "https://oneapi-comate.baidu-int.com/v1"),
-    )
-    model = os.getenv("CT_EXTRACTOR_MODEL", "gpt-5.4")
+    api_key = _api_key or os.getenv("CT_EXTRACTOR_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN", "")
+    base_url = _base_url or os.getenv("CT_EXTRACTOR_BASE_URL", "https://oneapi-comate.baidu-int.com/v1")
+    model = _model or os.getenv("CT_EXTRACTOR_MODEL", "gpt-5.4")
+    client = OpenAI(api_key=api_key, base_url=base_url)
     try:
         resp = client.chat.completions.create(
             model=model,

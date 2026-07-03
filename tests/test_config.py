@@ -49,3 +49,37 @@ def test_get_config_returns_three_keys(client):
     assert "extractor_api_key" in keys
     assert "extractor_base_url" in keys
     assert "extractor_model" in keys
+
+
+def test_extractor_runtime_vars_used():
+    """extractor 应优先使用运行时变量而不是环境变量。"""
+    from server.services import extractor as _extractor
+    from unittest.mock import patch, MagicMock
+
+    original_api_key = _extractor._api_key
+    original_base_url = _extractor._base_url
+    original_model = _extractor._model
+
+    _extractor._api_key = "runtime-key"
+    _extractor._base_url = "https://runtime.example.com/v1"
+    _extractor._model = "runtime-model"
+
+    captured = {}
+
+    def fake_openai(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop here")
+
+    try:
+        with patch("server.services.extractor.OpenAI", side_effect=fake_openai):
+            try:
+                _extractor.extract_memories("test summary")
+            except Exception:
+                pass
+    finally:
+        _extractor._api_key = original_api_key
+        _extractor._base_url = original_base_url
+        _extractor._model = original_model
+
+    assert captured.get("api_key") == "runtime-key"
+    assert captured.get("base_url") == "https://runtime.example.com/v1"
