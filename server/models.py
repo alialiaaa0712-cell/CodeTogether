@@ -185,3 +185,11 @@ class ApiKey(Base):
     is_admin = Column(Integer, nullable=False, default=0)
     is_active = Column(Integer, nullable=False, default=1)
     created_at = Column(Double, default=time.time)
+
+
+class ServerConfig(Base):
+    """服务端运行时配置表，存储记忆提取等可在 Web 端调整的参数。"""
+    __tablename__ = "server_config"
+
+    key = Column(String(64), primary_key=True)
+    value = Column(Text, nullable=True)

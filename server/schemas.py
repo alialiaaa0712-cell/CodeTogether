@@ -171,3 +171,17 @@ class ApiKeyOut(BaseModel):
             if "is_active" in data:
                 data["is_active"] = bool(data["is_active"])
         return data
+
+
+class ConfigItemOut(BaseModel):
+    """单条配置项输出，api_key 值脱敏处理。"""
+    model_config = ConfigDict(from_attributes=True)
+    key: str
+    value: str
+
+
+class ConfigUpdate(BaseModel):
+    """更新配置请求体，字段均可选，None 表示不更新。"""
+    extractor_api_key: Optional[str] = None
+    extractor_base_url: Optional[str] = None
+    extractor_model: Optional[str] = None
