@@ -174,10 +174,10 @@ class ApiKeyOut(BaseModel):
 
 
 class ConfigItemOut(BaseModel):
-    """单条配置项输出，api_key 值脱敏处理。"""
+    """单条配置项输出。"""
     model_config = ConfigDict(from_attributes=True)
     key: str
-    value: str
+    value: Optional[str] = None
 
 
 class ConfigUpdate(BaseModel):
