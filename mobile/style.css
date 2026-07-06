@@ -43,6 +43,10 @@ body {
   padding-bottom: calc(72px + env(safe-area-inset-bottom));
 }
 
+body.in-chat {
+  overflow: hidden;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -196,8 +200,8 @@ label {
 #view-chat {
   display: none;
   flex-direction: column;
-  height: calc(100dvh - 86px - 84px - env(safe-area-inset-bottom));
-  padding: 0 14px 14px;
+  height: calc(100dvh - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  padding: 0 14px calc(env(safe-area-inset-bottom) + 14px);
   overflow: hidden;
 }
 
@@ -463,22 +467,14 @@ label {
 }
 
 .chat-agent-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 249, 253, 0.86));
-  border: 1px solid rgba(104, 124, 154, 0.12);
-  border-radius: 20px;
-  margin-bottom: 10px;
-  font-size: 14px;
-  box-shadow: var(--shadow-soft);
+  display: none;
 }
 
 .chat-history {
   position: relative;
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
   padding: 8px 2px 10px;
   display: flex;
@@ -611,7 +607,7 @@ label {
 
 .chat-jump-latest {
   position: fixed;
-  bottom: calc(80px + env(safe-area-inset-bottom));
+  bottom: calc(155px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   width: auto;

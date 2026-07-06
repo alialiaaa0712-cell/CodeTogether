@@ -367,14 +367,19 @@ function openChat(sessionId) {
   saveUiState();
 
   const session = state.sessions.find((s) => s.id === sessionId);
-  dom.chatAgentInfo.innerHTML = session
-    ? `<span class="status-dot ${escapeHtml(session.status)}"></span><strong>${escapeHtml(projectLabel(session))}</strong><span class="hint" style="margin-left:8px">${escapeHtml(session.id)}</span>`
-    : escapeHtml(sessionId);
+  const topbarTitle = document.querySelector(".topbar-title");
+  if (topbarTitle) {
+    topbarTitle._origText = topbarTitle._origText || topbarTitle.textContent;
+    topbarTitle.textContent = session ? session.id.slice(0, 8) : sessionId.slice(0, 8);
+  }
+  dom.connStatus.style.display = "none";
+  if (dom.logoutBtn) dom.logoutBtn.style.display = "none";
+  dom.chatAgentInfo.innerHTML = "";
 
   // 切换视图
   Object.values(dom.views).forEach((v) => v.classList.remove("active"));
   dom.views.chat.classList.add("active");
-  dom.topbarMain.style.display = "none";
+  document.body.classList.add("in-chat");
   dom.backBtn.style.display = "flex";
   document.querySelector(".tab-bar").style.display = "none";
   updateJumpToLatestButton();
@@ -399,8 +404,15 @@ function closeChat() {
   state.showJumpToLatest = false;
   clearInterval(state.chatPollTimer);
   updateJumpToLatestButton();
+  const topbarTitleOnClose = document.querySelector(".topbar-title");
+  if (topbarTitleOnClose && topbarTitleOnClose._origText) {
+    topbarTitleOnClose.textContent = topbarTitleOnClose._origText;
+  }
+  dom.connStatus.style.display = "";
+  if (dom.logoutBtn) dom.logoutBtn.style.display = getApiKey() ? "" : "none";
   Object.values(dom.views).forEach((v) => v.classList.remove("active"));
   dom.views.agents.classList.add("active");
+  document.body.classList.remove("in-chat");
   dom.topbarMain.style.display = "";
   dom.backBtn.style.display = "none";
   document.querySelector(".tab-bar").style.display = "";

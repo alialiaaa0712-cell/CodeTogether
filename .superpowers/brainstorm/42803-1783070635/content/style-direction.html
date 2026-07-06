@@ -1,0 +1,79 @@
+<h2>手机端界面美化方向</h2>
+<p class="subtitle">当前已是蓝灰磨砂风格，请选择想要强化的方向</p>
+
+<div class="cards">
+  <div class="card" data-choice="A" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: linear-gradient(135deg, #eef2f7 0%, #dfe7f3 100%); padding: 20px; border-radius: 12px; margin-bottom: 12px;">
+      <div style="background: rgba(255,255,255,0.9); border-radius: 16px; padding: 12px; margin-bottom: 8px; box-shadow: 0 4px 16px rgba(37,89,195,0.10);">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+          <div style="width:28px; height:28px; border-radius:8px; background:linear-gradient(135deg,#2559c3,#4a7ff0);"></div>
+          <div style="font-size:13px; font-weight:600; color:#162033;">Agent #1</div>
+          <div style="margin-left:auto; width:8px; height:8px; border-radius:50%; background:#1f8a62;"></div>
+        </div>
+        <div style="height:6px; background:#eef2f7; border-radius:3px; overflow:hidden;">
+          <div style="width:65%; height:100%; background:linear-gradient(90deg,#2559c3,#4a7ff0); border-radius:3px;"></div>
+        </div>
+      </div>
+      <div style="background: rgba(255,255,255,0.9); border-radius: 16px; padding: 12px; box-shadow: 0 4px 16px rgba(37,89,195,0.10);">
+        <div style="font-size:11px; color:#5b6678; margin-bottom:4px;">连接状态</div>
+        <div style="font-size:18px; font-weight:700; color:#2559c3;">已连接</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — 精致提升</h3>
+      <p>保持现有蓝灰风格，优化卡片层次、增加渐变图标、强化状态指示色，整体更精致立体</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="B" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #0f0f12; padding: 20px; border-radius: 12px; margin-bottom: 12px;">
+      <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); border-radius: 16px; padding: 12px; margin-bottom: 8px; backdrop-filter: blur(12px);">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+          <div style="width:28px; height:28px; border-radius:8px; background:linear-gradient(135deg,#4a7ff0,#7ba3ff);"></div>
+          <div style="font-size:13px; font-weight:600; color:#e8edf5;">Agent #1</div>
+          <div style="margin-left:auto; width:8px; height:8px; border-radius:50%; background:#3dd68c;"></div>
+        </div>
+        <div style="height:6px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden;">
+          <div style="width:65%; height:100%; background:linear-gradient(90deg,#4a7ff0,#7ba3ff); border-radius:3px;"></div>
+        </div>
+      </div>
+      <div style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); border-radius: 16px; padding: 12px;">
+        <div style="font-size:11px; color:rgba(255,255,255,0.4); margin-bottom:4px;">连接状态</div>
+        <div style="font-size:18px; font-weight:700; color:#7ba3ff;">已连接</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — 深色模式</h3>
+      <p>深色背景 + 磨砂玻璃卡片，现代感更强，适合暗环境使用，保留蓝色品牌色调</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="C" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: linear-gradient(135deg, #f0f4ff 0%, #e8edf8 100%); padding: 20px; border-radius: 12px; margin-bottom: 12px;">
+      <div style="background: white; border-radius: 20px; padding: 14px; margin-bottom: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:36px; height:36px; border-radius:12px; background:#eef2ff; display:flex; align-items:center; justify-content:center; font-size:18px;">🤖</div>
+          <div>
+            <div style="font-size:13px; font-weight:600; color:#1a1a2e;">Agent #1</div>
+            <div style="font-size:11px; color:#6b7280;">运行中 · 2分钟前</div>
+          </div>
+          <div style="margin-left:auto; background:#dcfce7; color:#16a34a; font-size:11px; font-weight:500; padding:2px 8px; border-radius:20px;">活跃</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <div style="flex:1; background:white; border-radius:16px; padding:10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); text-align:center;">
+          <div style="font-size:20px; font-weight:700; color:#2559c3;">3</div>
+          <div style="font-size:10px; color:#6b7280;">项目</div>
+        </div>
+        <div style="flex:1; background:white; border-radius:16px; padding:10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); text-align:center;">
+          <div style="font-size:20px; font-weight:700; color:#1f8a62;">12</div>
+          <div style="font-size:10px; color:#6b7280;">记忆</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — 清爽卡片</h3>
+      <p>纯白卡片 + 更大圆角 + 彩色 badge，更接近现代 App 风格，对比度更高、更易阅读</p>
+    </div>
+  </div>
+</div>
