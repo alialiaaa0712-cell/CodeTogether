@@ -6,7 +6,10 @@ import time
 import urllib.error
 import urllib.request
 
-SERVER = os.environ.get("CODETOGETHER_SERVER", "http://localhost:8000")
+# 支持逗号分隔多个服务端地址，写操作（POST/PATCH）会同时上报到所有服务端
+_raw_server = os.environ.get("CODETOGETHER_SERVER", "http://localhost:8000")
+SERVERS = [s.strip() for s in _raw_server.split(",") if s.strip()]
+SERVER = SERVERS[0]  # 兼容旧代码：读操作（GET）只用第一个服务端
 API_KEY = os.environ.get("CODETOGETHER_API_KEY", "")
 TIMEOUT = 2
 
@@ -75,21 +78,22 @@ def get_session_id() -> str:
 
 def post_event(payload: dict) -> None:
     """
-    向服务器上报事件，失败时静默跳过。
+    向所有配置的服务端上报事件，失败时静默跳过。
 
     参数:
         payload: 事件数据，字段见 EventCreate schema
     """
-    try:
-        req = urllib.request.Request(
-            f"{SERVER}/events",
-            data=json.dumps(payload).encode(),
-            headers=_auth_headers(),
-            method="POST",
-        )
-        _http_request_with_retry(req)
-    except Exception:
-        pass
+    for server in SERVERS:
+        try:
+            req = urllib.request.Request(
+                f"{server}/events",
+                data=json.dumps(payload).encode(),
+                headers=_auth_headers(),
+                method="POST",
+            )
+            _http_request_with_retry(req)
+        except Exception:
+            pass
 
 
 def poll_messages(session_id: str) -> list:
@@ -191,13 +195,17 @@ def ensure_session(session_id: str, cwd: str = None, repo_url: str = None, paren
             payload["repo_url"] = repo_url
         if parent_id:
             payload["parent_id"] = parent_id
-        req = urllib.request.Request(
-            f"{SERVER}/agents",
-            data=json.dumps(payload).encode(),
-            headers=_auth_headers(),
-            method="POST",
-        )
-        _http_request_with_retry(req)
+        for server in SERVERS:
+            try:
+                req = urllib.request.Request(
+                    f"{server}/agents",
+                    data=json.dumps(payload).encode(),
+                    headers=_auth_headers(),
+                    method="POST",
+                )
+                _http_request_with_retry(req)
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -252,13 +260,17 @@ def post_chat_message(session_id: str, content: str, role: str = "user", source_
             payload["source_uuid"] = source_uuid
         if created_at is not None:
             payload["created_at"] = created_at
-        req = urllib.request.Request(
-            f"{SERVER}/chat",
-            data=json.dumps(payload).encode(),
-            headers=_auth_headers(),
-            method="POST",
-        )
-        _http_request_with_retry(req)
+        for server in SERVERS:
+            try:
+                req = urllib.request.Request(
+                    f"{server}/chat",
+                    data=json.dumps(payload).encode(),
+                    headers=_auth_headers(),
+                    method="POST",
+                )
+                _http_request_with_retry(req)
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -270,16 +282,17 @@ def mark_stopped(session_id: str) -> None:
     参数:
         session_id: 目标会话 ID
     """
-    try:
-        req = urllib.request.Request(
-            f"{SERVER}/agents/{session_id}/status",
-            data=json.dumps({"status": "stopped"}).encode(),
-            headers=_auth_headers(),
-            method="PATCH",
-        )
-        _http_request_with_retry(req)
-    except Exception:
-        pass
+    for server in SERVERS:
+        try:
+            req = urllib.request.Request(
+                f"{server}/agents/{session_id}/status",
+                data=json.dumps({"status": "stopped"}).encode(),
+                headers=_auth_headers(),
+                method="PATCH",
+            )
+            _http_request_with_retry(req)
+        except Exception:
+            pass
 
 
 def get_repo_url(cwd: str) -> str:
