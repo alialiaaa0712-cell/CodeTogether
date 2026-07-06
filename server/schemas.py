@@ -11,6 +11,7 @@ class SessionCreate(BaseModel):
     parent_id: Optional[str] = None
     cwd: Optional[str] = None
     model: Optional[str] = None
+    repo_url: Optional[str] = None
 
 
 class SessionOut(BaseModel):
@@ -23,6 +24,7 @@ class SessionOut(BaseModel):
     notes: Optional[str] = None
     started_at: float
     ended_at: Optional[float] = None
+    user_label: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -140,3 +142,46 @@ class MemoryOut(BaseModel):
 class MemoryUpdate(BaseModel):
     status: Optional[Literal["active", "rejected", "review"]] = None
     tier: Optional[Literal["short", "long"]] = None
+
+
+class ApiKeyCreate(BaseModel):
+    label: str = Field(..., max_length=128)
+    is_admin: bool = False
+
+
+class ApiKeyOut(BaseModel):
+    id: str
+    label: str
+    is_admin: bool
+    is_active: bool
+    created_at: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_bools(cls, data: Any) -> Any:
+        """SQLite 将 BOOL 存为 0/1 整数，统一转为 Python bool。"""
+        if hasattr(data, "is_admin"):
+            object.__setattr__(data, "is_admin", bool(data.is_admin))
+            object.__setattr__(data, "is_active", bool(data.is_active))
+        elif isinstance(data, dict):
+            if "is_admin" in data:
+                data["is_admin"] = bool(data["is_admin"])
+            if "is_active" in data:
+                data["is_active"] = bool(data["is_active"])
+        return data
+
+
+class ConfigItemOut(BaseModel):
+    """单条配置项输出。"""
+    model_config = ConfigDict(from_attributes=True)
+    key: str
+    value: Optional[str] = None
+
+
+class ConfigUpdate(BaseModel):
+    """更新配置请求体，字段均可选，None 表示不更新。"""
+    extractor_api_key: Optional[str] = None
+    extractor_base_url: Optional[str] = None
+    extractor_model: Optional[str] = None

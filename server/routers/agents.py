@@ -13,11 +13,15 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session as DBSession
 
 from server.database import SessionLocal, get_db
+from server.models import ApiKey
 from server.models import Event as EventModel
 from server.models import Memory as MemoryModel
+from server.models import MemoryFeedbackLog as MemoryFeedbackLogModel
+from server.models import MemorySearchExposure as MemorySearchExposureModel
 from server.models import Message as MessageModel
 from server.models import Project as ProjectModel
 from server.models import Session as SessionModel
+from server.routers.auth import get_current_key
 from server.schemas import SessionCreate, SessionOut
 from server.services.extractor import extract_memories
 
@@ -72,36 +76,62 @@ def _ensure_project_for_cwd(cwd: Optional[str], db: DBSession) -> Optional[str]:
     return project.id
 
 
-def _ensure_project_for_session(body: SessionCreate, db: DBSession) -> Optional[str]:
+def _ensure_project_for_repo_url(repo_url: str, db: DBSession) -> Optional[str]:
     """
-    为会话解析并确保 project_id 存在，优先按完整 cwd 路径匹配项目。
+    按 git remote URL 精确匹配项目，未命中时自动创建。
 
     参数:
-        body: 创建会话请求体，可能只包含 cwd 而未显式提供 project_id。
-        db: 数据库会话，用于查询或创建项目记录。
+        repo_url: git remote origin URL，作为全局唯一项目键。
+        db: 数据库会话。
 
     返回值:
-        若可确定项目则返回 project_id；否则返回 None。
+        project_id 字符串。
+    """
+    repo_url = repo_url.strip()
+    existing = db.query(ProjectModel).filter(ProjectModel.repo_url == repo_url).first()
+    if existing:
+        return existing.id
+    # 取 URL 最后一段作为项目名，去掉 .git 后缀
+    stem = PurePath(repo_url.rstrip("/")).name
+    name = stem[:-4] if stem.endswith(".git") else stem
+    name = name or repo_url
+    project = ProjectModel(name=name, repo_url=repo_url)
+    db.add(project)
+    db.flush()
+    return project.id
+
+
+def _ensure_project_for_session(body: SessionCreate, db: DBSession) -> Optional[str]:
+    """
+    为会话解析 project_id：优先按 repo_url 精确匹配，无则按 cwd 回退。
+
+    参数:
+        body: 创建会话请求体。
+        db: 数据库会话。
+
+    返回值:
+        project_id 字符串，或 None。
     """
     if body.project_id:
         return body.project_id
+    if body.repo_url:
+        return _ensure_project_for_repo_url(body.repo_url, db)
     return _ensure_project_for_cwd(body.cwd, db)
 
 
-async def _broadcast_session_update(request: Request, session: SessionModel) -> None:
+async def _broadcast_session_update(session: SessionModel) -> None:
     """
-    通过统一的 agent_update 消息广播最新会话快照，确保前后端字段结构一致。
+    广播最新会话快照给所有连接的手机端。
 
     参数:
-        request: 当前请求对象，用于读取应用上的 WebSocket 管理器。
         session: 已完成提交并刷新的会话 ORM 对象。
 
     返回值:
         无。
     """
     try:
-        manager = request.app.state.ws_manager
-        await manager.broadcast({
+        from server import broadcast
+        await broadcast.publish({
             "type": "agent_update",
             "data": SessionOut.model_validate(session).model_dump(),
         })
@@ -118,7 +148,7 @@ class ParentUpdate(BaseModel):
 
 
 @router.post("", response_model=SessionOut)
-async def create_session(body: SessionCreate, request: Request, db: DBSession = Depends(get_db)):
+async def create_session(body: SessionCreate, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     创建 Agent 会话，并在成功写库后向移动端广播最新会话数据。
 
@@ -145,22 +175,22 @@ async def create_session(body: SessionCreate, request: Request, db: DBSession = 
         return existing
 
     project_id = _ensure_project_for_session(body, db)
-    session_payload = body.model_dump(exclude={"project_id"})
-    session = SessionModel(**session_payload, project_id=project_id)
+    session_payload = body.model_dump(exclude={"project_id", "repo_url"})
+    session = SessionModel(**session_payload, project_id=project_id, user_label=_key.label if _key else None)
     db.add(session)
     db.commit()
     db.refresh(session)
-    await _broadcast_session_update(request, session)
+    await _broadcast_session_update(session)
     return session
 
 
 @router.get("", response_model=List[SessionOut])
-def list_sessions(db: DBSession = Depends(get_db)):
+def list_sessions(db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     return db.query(SessionModel).all()
 
 
 @router.patch("/{session_id}/status", response_model=SessionOut)
-async def update_status(session_id: str, body: StatusUpdate, request: Request, db: DBSession = Depends(get_db)):
+async def update_status(session_id: str, body: StatusUpdate, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     更新会话状态，并在状态变更后广播最新会话数据。
 
@@ -181,7 +211,7 @@ async def update_status(session_id: str, body: StatusUpdate, request: Request, d
         session.ended_at = time.time()
     db.commit()
     db.refresh(session)
-    await _broadcast_session_update(request, session)
+    await _broadcast_session_update(session)
 
     if body.status == "stopped":
         pass  # 记忆由 Claude 通过 memory_create MCP 工具主动创建，不再自动提炼
@@ -190,7 +220,7 @@ async def update_status(session_id: str, body: StatusUpdate, request: Request, d
 
 
 @router.patch("/{session_id}/parent", response_model=SessionOut)
-async def update_parent(session_id: str, body: ParentUpdate, request: Request, db: DBSession = Depends(get_db)):
+async def update_parent(session_id: str, body: ParentUpdate, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     更新会话父子关系，并向前端广播最新会话数据。
 
@@ -209,7 +239,7 @@ async def update_parent(session_id: str, body: ParentUpdate, request: Request, d
     session.parent_id = body.parent_id
     db.commit()
     db.refresh(session)
-    await _broadcast_session_update(request, session)
+    await _broadcast_session_update(session)
     return session
 
 
@@ -222,7 +252,7 @@ class NotesUpdate(BaseModel):
 
 
 @router.patch("/{session_id}/model", response_model=SessionOut)
-async def update_model(session_id: str, body: ModelUpdate, request: Request, db: DBSession = Depends(get_db)):
+async def update_model(session_id: str, body: ModelUpdate, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     更新会话模型名称，并向前端广播最新会话数据。
 
@@ -241,12 +271,12 @@ async def update_model(session_id: str, body: ModelUpdate, request: Request, db:
     session.model = body.model
     db.commit()
     db.refresh(session)
-    await _broadcast_session_update(request, session)
+    await _broadcast_session_update(session)
     return session
 
 
 @router.patch("/{session_id}/notes", response_model=SessionOut)
-async def update_notes(session_id: str, body: NotesUpdate, request: Request, db: DBSession = Depends(get_db)):
+async def update_notes(session_id: str, body: NotesUpdate, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     更新会话备注，并向前端广播最新会话数据。
 
@@ -265,12 +295,12 @@ async def update_notes(session_id: str, body: NotesUpdate, request: Request, db:
     session.notes = body.notes
     db.commit()
     db.refresh(session)
-    await _broadcast_session_update(request, session)
+    await _broadcast_session_update(session)
     return session
 
 
 @router.delete("/{session_id}", status_code=204)
-async def delete_session(session_id: str, request: Request, db: DBSession = Depends(get_db)):
+async def delete_session(session_id: str, request: Request, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     删除指定会话及其关联的消息和事件记录。
 
@@ -279,17 +309,26 @@ async def delete_session(session_id: str, request: Request, db: DBSession = Depe
         request: 当前请求对象，用于广播删除事件。
         db: 数据库会话。
     """
-    from server.models import Message as MessageModel, Event as EventModel
     session = db.get(SessionModel, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="session not found")
-    db.query(MessageModel).filter(MessageModel.session_id == session_id).delete()
-    db.query(EventModel).filter(EventModel.session_id == session_id).delete()
+    # 先解除子 session 的外键引用，避免自引用约束阻断删除
+    db.query(SessionModel).filter(SessionModel.parent_id == session_id).update(
+        {SessionModel.parent_id: None}, synchronize_session=False
+    )
+    db.query(MemorySearchExposureModel).filter(MemorySearchExposureModel.session_id == session_id).delete(synchronize_session=False)
+    db.query(MemoryFeedbackLogModel).filter(MemoryFeedbackLogModel.session_id == session_id).delete(synchronize_session=False)
+    # Memory.source_session_id 是 nullable 外键，置空而非删除，保留记忆本身
+    db.query(MemoryModel).filter(MemoryModel.source_session_id == session_id).update(
+        {MemoryModel.source_session_id: None}, synchronize_session=False
+    )
+    db.query(MessageModel).filter(MessageModel.session_id == session_id).delete(synchronize_session=False)
+    db.query(EventModel).filter(EventModel.session_id == session_id).delete(synchronize_session=False)
     db.delete(session)
     db.commit()
     try:
-        manager = request.app.state.ws_manager
-        await manager.broadcast({"type": "agent_deleted", "data": {"id": session_id}})
+        from server import broadcast
+        await broadcast.publish({"type": "agent_deleted", "data": {"id": session_id}})
     except Exception:
         pass
 

@@ -49,3 +49,18 @@ def test_database_url_can_be_loaded_from_dotenv(tmp_path, monkeypatch):
 
     assert module.DATABASE_URL == "sqlite:///./dotenv-test.db"
     assert str(module.engine.url) == "sqlite:///./dotenv-test.db"
+
+    # 清理测试用的假 server 模块，并还原 syspath，避免污染后续测试的 sys.modules
+    # 注意：monkeypatch.syspath_prepend 的撤销由 monkeypatch fixture teardown 处理，
+    # 但 sys.modules 里的假模块必须手动清理，否则后续测试导入时仍会命中旧对象。
+    # 只清理本测试真正替换的模块：server、server.database 和 server.routers 链，
+    # 保留 server.services.* 以免其他测试的模块级函数引用失效（patch 会绑到新模块而旧引用不感知）。
+    # 清理后重新导入 server.routers.memory，使 server.routers 属性链恢复（供 monkeypatch 路径解析用）。
+    # 注意：此时 syspath 仍含 monkeypatch 插入的假路径，必须先移除再重新导入真实模块。
+    import sys as _sys
+    fake_path = str(project_root)
+    if fake_path in _sys.path:
+        _sys.path.remove(fake_path)
+    for key in ("server.routers.memory", "server.routers", "server.database", "server"):
+        _sys.modules.pop(key, None)
+    importlib.import_module("server.routers.memory")

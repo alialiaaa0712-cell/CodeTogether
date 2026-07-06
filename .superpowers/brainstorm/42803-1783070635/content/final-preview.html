@@ -1,0 +1,102 @@
+<h2>整体设计方案确认</h2>
+<p class="subtitle">基于你的选择，这是完整的美化方案预览</p>
+
+<div class="mockup" style="max-width: 375px; margin: 0 auto;">
+  <div class="mockup-header">完整界面预览（Agent 页）</div>
+  <div class="mockup-body" style="background: #eef2f7; padding: 0; overflow: hidden; border-radius: 0 0 8px 8px; font-family: -apple-system, sans-serif;">
+
+    <!-- Topbar -->
+    <div style="background: rgba(246,249,253,0.92); backdrop-filter: blur(18px); padding: 10px 16px; display:flex; align-items:center; justify-content:space-between; border-bottom: 1px solid rgba(103,123,154,0.12);">
+      <span style="font-size:16px; font-weight:700; color:#162033; letter-spacing:-0.4px;">CodeTogether</span>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:11px; background:#dcfce7; color:#16a34a; padding:2px 9px; border-radius:20px; font-weight:600;">● 已连接</span>
+        <span style="font-size:12px; color:#9ca3af; cursor:pointer;">退出</span>
+      </div>
+    </div>
+
+    <!-- Hero card -->
+    <div style="padding: 12px 14px 0;">
+      <div style="background: rgba(255,255,255,0.88); border-radius: 22px; padding: 16px; box-shadow: 0 8px 28px rgba(37,89,195,0.09); position:relative; overflow:hidden;">
+        <div style="position:absolute; top:-20px; right:-20px; width:100px; height:100px; background:rgba(37,89,195,0.07); border-radius:50%;"></div>
+        <div style="font-size:12px; font-weight:600; color:#5b6678; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px;">概览</div>
+        <div style="display:flex; gap:0;">
+          <div style="flex:1; text-align:center;">
+            <div style="font-size:26px; font-weight:800; color:#2559c3; line-height:1;">2</div>
+            <div style="font-size:11px; color:#7d8797; margin-top:3px;">活跃</div>
+          </div>
+          <div style="width:1px; background:rgba(103,123,154,0.15); margin: 4px 0;"></div>
+          <div style="flex:1; text-align:center;">
+            <div style="font-size:26px; font-weight:800; color:#162033; line-height:1;">3</div>
+            <div style="font-size:11px; color:#7d8797; margin-top:3px;">项目</div>
+          </div>
+          <div style="width:1px; background:rgba(103,123,154,0.15); margin: 4px 0;"></div>
+          <div style="flex:1; text-align:center;">
+            <div style="font-size:26px; font-weight:800; color:#162033; line-height:1;">8</div>
+            <div style="font-size:11px; color:#7d8797; margin-top:3px;">记忆</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent 列表 -->
+    <div style="padding: 12px 14px; display:flex; flex-direction:column; gap:8px;">
+      <div style="font-size:11px; font-weight:600; color:#7d8797; text-transform:uppercase; letter-spacing:0.5px; padding: 0 2px; margin-bottom:2px;">Agent</div>
+
+      <!-- 项目分组标题 -->
+      <div style="font-size:11px; color:#5b6678; font-weight:500; padding: 2px 4px;">search / CodeTogether</div>
+
+      <!-- 运行中卡片 -->
+      <div style="background: rgba(255,255,255,0.9); border-radius: 16px; padding: 13px 14px; box-shadow: 0 3px 12px rgba(37,89,195,0.07); border-left: 4px solid #1f8a62; overflow:hidden;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:13px; font-weight:600; color:#162033;">主会话</div>
+            <div style="font-size:11px; color:#5b6678; margin-top:2px;">工具调用中 · 刚刚</div>
+          </div>
+          <span style="font-size:10px; background:#dcfce7; color:#16a34a; padding:2px 9px; border-radius:20px; font-weight:600; white-space:nowrap;">运行中</span>
+        </div>
+      </div>
+
+      <!-- 停止卡片 -->
+      <div style="background: rgba(255,255,255,0.85); border-radius: 16px; padding: 13px 14px; box-shadow: 0 2px 8px rgba(37,89,195,0.04); border-left: 4px solid #dfe7f3; overflow:hidden;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:13px; font-weight:600; color:#5b6678;">demo / project</div>
+            <div style="font-size:11px; color:#7d8797; margin-top:2px;">已停止 · 5分钟前</div>
+          </div>
+          <span style="font-size:10px; background:#f4f7fb; color:#9ca3af; padding:2px 9px; border-radius:20px; font-weight:500; white-space:nowrap;">停止</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab bar -->
+    <div style="background: rgba(244,247,251,0.96); backdrop-filter: blur(16px); padding: 4px 16px 14px; display:flex; border-top: 1px solid rgba(103,123,154,0.10);">
+      <div style="flex:1; text-align:center; padding: 8px 0 5px; font-size:12px; font-weight:600; color:#2559c3; position:relative;">
+        Agent
+        <div style="position:absolute; bottom:0; left:50%; transform:translateX(-50%); width:20px; height:3px; background:#2559c3; border-radius:2px;"></div>
+      </div>
+      <div style="flex:1; text-align:center; padding: 8px 0 5px; font-size:12px; color:#7d8797;">记忆</div>
+      <div style="flex:1; text-align:center; padding: 8px 0 5px; font-size:12px; color:#7d8797;">设置</div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top: 20px; text-align: center;">
+  <p class="subtitle">美化要点：左侧状态条 · 底部 tab 横线 · 绿色徽章 · 概览卡片数字加粗 · 退出按钮低调化</p>
+</div>
+
+<div class="options" style="margin-top: 16px;">
+  <div class="option" data-choice="approve" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>就这样，开始实现</h3>
+      <p>按此设计方案开始编写代码</p>
+    </div>
+  </div>
+  <div class="option" data-choice="adjust" onclick="toggleSelect(this)">
+    <div class="letter">↺</div>
+    <div class="content">
+      <h3>还需要调整</h3>
+      <p>告诉我哪里需要改动</p>
+    </div>
+  </div>
+</div>

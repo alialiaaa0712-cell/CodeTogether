@@ -45,6 +45,7 @@ class Session(Base):
     cwd = Column(String(512))
     model = Column(String(128))
     notes = Column(Text)
+    user_label = Column(String(128), nullable=True)  # 请求方的 API Key label，用于前端区分是哪台机器的会话
     started_at = Column(Double, default=time.time)
     ended_at = Column(Double)
 
@@ -171,3 +172,24 @@ class MemorySearchExposure(Base):
         Index("ix_memory_search_exposures_exposed_at", "exposed_at"),
         Index("ix_memory_search_exposures_memory_session", "memory_id", "session_id"),
     )
+
+
+class ApiKey(Base):
+    """API Key 表：存储团队成员认证凭证的哈希值。"""
+    __tablename__ = "api_keys"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    key_hash = Column(String(64), nullable=False, unique=True)
+    label = Column(String(128), nullable=False)
+    # SQLite 将 Boolean 存为 0/1，为跨数据库兼容直接用 Integer
+    is_admin = Column(Integer, nullable=False, default=0)
+    is_active = Column(Integer, nullable=False, default=1)
+    created_at = Column(Double, default=time.time)
+
+
+class ServerConfig(Base):
+    """服务端运行时配置表，存储记忆提取等可在 Web 端调整的参数。"""
+    __tablename__ = "server_config"
+
+    key = Column(String(64), primary_key=True)
+    value = Column(Text, nullable=True)

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -14,13 +15,16 @@ from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import inspect, text
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
-from server.database import Base, SessionLocal, engine, _is_sqlite
+from server.database import Base, SessionLocal, engine, _is_sqlite, get_db
+from server.models import ApiKey as ApiKeyModel
 from server.models import Memory as MemoryModel
 from server.models import Message as MessageModel
 from server.models import Session as SessionModel
-from server.routers import agents, chat, events, memory
+from server.routers import agents, chat, events, memory, auth as auth_router, config as config_router
+from server.routers.auth import get_current_key, seed_admin_key, _hash_key
+from server.routers.config import seed_default_config
 from server.services.housekeeping import run_memory_housekeeping
 from server.ws_manager import ConnectionManager
 
@@ -45,6 +49,24 @@ def _ensure_event_columns() -> None:
     if "tool_use_id" not in event_cols:
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE events ADD COLUMN tool_use_id VARCHAR(64)"))
+            conn.commit()
+
+
+def _ensure_auth_columns() -> None:
+    """
+    补齐 sessions 表的 user_label 列；对旧实例做兼容迁移。
+
+    参数:
+        无。
+
+    返回值:
+        无；若检测到列缺失，执行一次 ALTER TABLE。
+    """
+    inspector = inspect(engine)
+    session_cols = {c["name"] for c in inspector.get_columns("sessions")}
+    if "user_label" not in session_cols:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE sessions ADD COLUMN user_label VARCHAR(128)"))
             conn.commit()
 
 
@@ -144,17 +166,48 @@ def _run_startup_migrations() -> None:
     Base.metadata.create_all(bind=engine)
     if not _is_sqlite:
         _ensure_event_columns()
+        _ensure_auth_columns()
         _migrate_memories_to_score_fields()
     _activate_short_pending_memories()
+    db = SessionLocal()
+    try:
+        seed_admin_key(db)
+        seed_default_config(db)
+        # 从数据库加载配置，写入 extractor 运行时变量
+        from server.services import extractor as _extractor
+        from server.models import ServerConfig as ServerConfigModel
+        rows = db.query(ServerConfigModel).all()
+        config_map = {r.key: r.value or "" for r in rows}
+        _extractor._api_key = config_map.get("extractor_api_key", "")
+        _extractor._base_url = config_map.get("extractor_base_url", "https://oneapi-comate.baidu-int.com/v1")
+        _extractor._model = config_map.get("extractor_model", "gpt-5.4")
+    finally:
+        db.close()
 
 
 if not os.getenv("TESTING"):
     _run_startup_migrations()
 
+manager = ConnectionManager()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """管理应用生命周期：启动定时任务，退出时关闭。"""
+    """管理应用生命周期：初始化广播模块，启动定时任务，退出时清理。
+
+    参数:
+        app: FastAPI 应用实例。
+
+    返回值:
+        无；使用 async generator 协议，yield 前为启动阶段，yield 后为关闭阶段。
+    """
+    from server import broadcast
+
+    # 初始化广播模块：连接 Redis（若配置了 REDIS_URL），注入本进程 WebSocket 管理器
+    await broadcast.init(manager)
+    # 启动 Redis 订阅协程，将 channel 消息广播给本进程所有 WebSocket 连接
+    subscribe_task = asyncio.create_task(broadcast.subscribe_and_forward(manager))
+
     scheduler = None
     if not os.getenv("TESTING"):
         scheduler = BackgroundScheduler()
@@ -184,11 +237,19 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(_expire_pending_messages, "interval", minutes=1)
         scheduler.start()
     yield
+    # 取消订阅协程，等待其干净退出
+    subscribe_task.cancel()
+    try:
+        await subscribe_task
+    except asyncio.CancelledError:
+        pass
     if scheduler is not None:
         scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="CodeTogether", lifespan=lifespan)
+
+app.state.ws_manager = manager
 
 app.add_middleware(
     CORSMiddleware,
@@ -197,9 +258,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-manager = ConnectionManager()
-app.state.ws_manager = manager
-
 _mobile_dir = Path(__file__).parent.parent / "mobile"
 app.mount("/mobile", StaticFiles(directory=str(_mobile_dir), html=True), name="mobile")
 
@@ -207,19 +265,43 @@ app.include_router(agents.router)
 app.include_router(events.router)
 app.include_router(chat.router)
 app.include_router(memory.router)
+app.include_router(auth_router.router)
+app.include_router(config_router.router)
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    api_key: str = "",
+    db: Session = Depends(get_db),
+):
     """
-    处理 WebSocket 连接的建立与断开。
+    处理 WebSocket 连接。若服务端存在活跃 ApiKey 记录，则要求 api_key query param 有效。
+    本地无认证场景（api_keys 表为空）时直接放行，保持向后兼容。
 
     参数:
-        websocket: FastAPI 提供的 WebSocket 连接对象，用于接收客户端消息并维护连接状态。
+        websocket: FastAPI WebSocket 连接对象。
+        api_key: query string 中的明文 API Key，可为空。
+        db: 数据库会话，通过 get_db 依赖注入，测试时可被 override。
 
     返回值:
-        无返回值；连接关闭后结束协程。
+        无；认证失败时以 code=4001 关闭连接。
     """
+    has_any_key = db.query(ApiKeyModel).filter(ApiKeyModel.is_active == 1).first() is not None
+    if has_any_key:
+        if not api_key:
+            await websocket.accept()
+            await websocket.close(code=4001)
+            return
+        key_hash = _hash_key(api_key)
+        valid = db.query(ApiKeyModel).filter(
+            ApiKeyModel.key_hash == key_hash,
+            ApiKeyModel.is_active == 1,
+        ).first()
+        if not valid:
+            await websocket.accept()
+            await websocket.close(code=4001)
+            return
     await manager.connect(websocket)
     try:
         while True:

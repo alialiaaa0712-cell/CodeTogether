@@ -1,10 +1,66 @@
 """hooks 共用的 HTTP 工具函数。"""
 import json
 import os
+import subprocess
+import time
+import urllib.error
 import urllib.request
 
-SERVER = os.environ.get("CODETOGETHER_SERVER", "http://localhost:8000")
+# 支持逗号分隔多个服务端地址，写操作（POST/PATCH）会同时上报到所有服务端
+_raw_server = os.environ.get("CODETOGETHER_SERVER", "http://localhost:8000")
+SERVERS = [s.strip() for s in _raw_server.split(",") if s.strip()]
+SERVER = SERVERS[0]  # 兼容旧代码：读操作（GET）只用第一个服务端
+API_KEY = os.environ.get("CODETOGETHER_API_KEY", "")
 TIMEOUT = 2
+
+
+def _auth_headers() -> dict:
+    """
+    返回包含 Content-Type 和 Authorization 的请求头。
+
+    返回值:
+        dict：有 API_KEY 时包含 Bearer Token；无 key 时仅有 Content-Type。
+    """
+    if API_KEY:
+        return {"Content-Type": "application/json", "Authorization": f"Bearer {API_KEY}"}
+    return {"Content-Type": "application/json"}
+
+
+# 重试间隔序列（秒）：第1次失败后等 0.5s，第2次失败后等 1.0s；共最多 3 次尝试
+_RETRY_DELAYS = (0.5, 1.0)
+
+
+def _http_request_with_retry(req: urllib.request.Request) -> None:
+    """
+    带指数退避重试的 HTTP 请求，专用于写操作（POST/PATCH）。
+
+    网络错误或 5xx 时按 _RETRY_DELAYS 间隔重试；4xx 时立即放弃（不重试）。
+    所有重试耗尽后静默跳过，不向上层抛出异常。
+
+    参数:
+        req: 已构造好的 urllib.request.Request 对象。
+
+    返回值:
+        无。
+    """
+    for i, delay in enumerate(_RETRY_DELAYS):
+        try:
+            urllib.request.urlopen(req, timeout=TIMEOUT)
+            return
+        except urllib.error.HTTPError as exc:
+            # 4xx 客户端错误不重试，直接返回
+            if exc.code < 500:
+                return
+            # 5xx 服务端错误：等待后重试
+            time.sleep(delay)
+        except Exception:
+            # 网络错误等：等待后重试
+            time.sleep(delay)
+    # 最后一次尝试（无等待）
+    try:
+        urllib.request.urlopen(req, timeout=TIMEOUT)
+    except Exception:
+        pass
 
 
 def get_session_id() -> str:
@@ -22,21 +78,22 @@ def get_session_id() -> str:
 
 def post_event(payload: dict) -> None:
     """
-    向服务器上报事件，失败时静默跳过。
+    向所有配置的服务端上报事件，失败时静默跳过。
 
     参数:
         payload: 事件数据，字段见 EventCreate schema
     """
-    try:
-        req = urllib.request.Request(
-            f"{SERVER}/events",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=TIMEOUT)
-    except Exception:
-        pass
+    for server in SERVERS:
+        try:
+            req = urllib.request.Request(
+                f"{server}/events",
+                data=json.dumps(payload).encode(),
+                headers=_auth_headers(),
+                method="POST",
+            )
+            _http_request_with_retry(req)
+        except Exception:
+            pass
 
 
 def poll_messages(session_id: str) -> list:
@@ -52,6 +109,7 @@ def poll_messages(session_id: str) -> list:
     try:
         req = urllib.request.Request(
             f"{SERVER}/chat/{session_id}/poll",
+            headers=_auth_headers(),
             method="GET",
         )
         resp = urllib.request.urlopen(req, timeout=TIMEOUT)
@@ -80,7 +138,7 @@ def memory_search(query: str, session_id: str, limit: int = 3) -> list:
                 "session_id": session_id,
                 "limit": limit,
             }).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=_auth_headers(),
             method="POST",
         )
         resp = urllib.request.urlopen(req, timeout=TIMEOUT)
@@ -110,7 +168,7 @@ def memory_feedback(memory_id: str, session_id: str, score: int, reason: str):
                 "score": score,
                 "reason": reason,
             }).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=_auth_headers(),
             method="POST",
         )
         resp = urllib.request.urlopen(req, timeout=TIMEOUT)
@@ -119,25 +177,35 @@ def memory_feedback(memory_id: str, session_id: str, score: int, reason: str):
         return None
 
 
-def ensure_session(session_id: str, cwd: str = None) -> None:
+def ensure_session(session_id: str, cwd: str = None, repo_url: str = None, parent_id: str = None) -> None:
     """
     确保 session 存在，不存在时静默创建，避免写消息时因 session 缺失而 404。
 
     参数:
         session_id: 目标会话 ID
         cwd: 工作目录（可选）
+        repo_url: git remote origin URL（可选）
+        parent_id: 父会话 ID（可选，子 Agent 时传入）
     """
     try:
         payload: dict = {"id": session_id}
         if cwd:
             payload["cwd"] = cwd
-        req = urllib.request.Request(
-            f"{SERVER}/agents",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=TIMEOUT)
+        if repo_url:
+            payload["repo_url"] = repo_url
+        if parent_id:
+            payload["parent_id"] = parent_id
+        for server in SERVERS:
+            try:
+                req = urllib.request.Request(
+                    f"{server}/agents",
+                    data=json.dumps(payload).encode(),
+                    headers=_auth_headers(),
+                    method="POST",
+                )
+                _http_request_with_retry(req)
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -166,7 +234,7 @@ def create_memory(title: str, content: str, session_id: str, tags: str = None) -
         req = urllib.request.Request(
             f"{SERVER}/memory",
             data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=_auth_headers(),
             method="POST",
         )
         resp = urllib.request.urlopen(req, timeout=TIMEOUT)
@@ -192,13 +260,17 @@ def post_chat_message(session_id: str, content: str, role: str = "user", source_
             payload["source_uuid"] = source_uuid
         if created_at is not None:
             payload["created_at"] = created_at
-        req = urllib.request.Request(
-            f"{SERVER}/chat",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=TIMEOUT)
+        for server in SERVERS:
+            try:
+                req = urllib.request.Request(
+                    f"{server}/chat",
+                    data=json.dumps(payload).encode(),
+                    headers=_auth_headers(),
+                    method="POST",
+                )
+                _http_request_with_retry(req)
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -210,15 +282,36 @@ def mark_stopped(session_id: str) -> None:
     参数:
         session_id: 目标会话 ID
     """
+    for server in SERVERS:
+        try:
+            req = urllib.request.Request(
+                f"{server}/agents/{session_id}/status",
+                data=json.dumps({"status": "stopped"}).encode(),
+                headers=_auth_headers(),
+                method="PATCH",
+            )
+            _http_request_with_retry(req)
+        except Exception:
+            pass
+
+
+def get_repo_url(cwd: str) -> str:
+    """
+    获取指定目录的 git remote origin URL。
+
+    参数:
+        cwd: 工作目录路径。
+
+    返回值:
+        remote URL 字符串；非 git 目录或命令失败时返回空字符串。
+    """
+    if not cwd:
+        return ""
     try:
-        req = urllib.request.Request(
-            f"{SERVER}/agents/{session_id}/status",
-            data=json.dumps({"status": "stopped"}).encode(),
-            headers={"Content-Type": "application/json"},
-            method="PATCH",
+        result = subprocess.run(
+            ["git", "-C", cwd, "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=2,
         )
-        urllib.request.urlopen(req, timeout=TIMEOUT)
+        return result.stdout.strip()
     except Exception:
-        pass
-
-
+        return ""

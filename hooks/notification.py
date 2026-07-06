@@ -22,13 +22,21 @@ def main():
         return
 
     session_id = data.get("session_id") or ""
+    child_agent_id = data.get("agent_id")
+    if child_agent_id:
+        target_session_id = child_agent_id
+        parent_session_id = session_id
+    else:
+        target_session_id = session_id
+        parent_session_id = None
+
     message = data.get("message") or ""
-    if not session_id or not message:
+    if not target_session_id or not message:
         return
 
     # 确保 session 存在，否则先创建
-    _common.ensure_session(session_id, cwd=data.get("cwd"))
-    _common.post_chat_message(session_id, message, role="assistant")
+    _common.ensure_session(target_session_id, cwd=data.get("cwd"), parent_id=parent_session_id)
+    _common.post_chat_message(target_session_id, message, role="assistant")
 
 
 if __name__ == "__main__":

@@ -43,6 +43,10 @@ body {
   padding-bottom: calc(72px + env(safe-area-inset-bottom));
 }
 
+body.in-chat {
+  overflow: hidden;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -142,22 +146,21 @@ label {
 }
 
 .conn-status {
-  padding: 7px 11px;
+  padding: 3px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
   white-space: nowrap;
-  border: 1px solid transparent;
+  border: none;
 }
 
 .conn-status.connected {
-  background: rgba(31, 138, 98, 0.12);
-  border-color: rgba(31, 138, 98, 0.16);
-  color: var(--success);
+  background: #dcfce7;
+  color: #16a34a;
 }
 
 .conn-status.disconnected {
-  background: rgba(204, 90, 67, 0.12);
-  border-color: rgba(204, 90, 67, 0.16);
+  background: rgba(204, 90, 67, 0.08);
   color: var(--danger);
 }
 
@@ -197,8 +200,8 @@ label {
 #view-chat {
   display: none;
   flex-direction: column;
-  height: calc(100dvh - 86px - 84px - env(safe-area-inset-bottom));
-  padding: 0 14px 14px;
+  height: calc(100dvh - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  padding: 0 14px calc(env(safe-area-inset-bottom) + 14px);
   overflow: hidden;
 }
 
@@ -312,9 +315,9 @@ label {
 .overview-value {
   display: block;
   margin-top: 8px;
-  font-size: 24px;
+  font-size: 26px;
   line-height: 1;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: -0.05em;
 }
 
@@ -353,55 +356,91 @@ label {
 .agent-card {
   width: 100%;
   background: rgba(255, 255, 255, 0.90);
-  border: 1px solid rgba(104, 124, 154, 0.12);
-  border-radius: 22px;
-  padding: 14px 15px;
-  margin-bottom: 10px;
-  box-shadow: var(--shadow-soft);
+  border: 1px solid rgba(104, 124, 154, 0.10);
+  border-left: 4px solid var(--line);
+  border-radius: 16px;
+  padding: 13px 14px;
+  margin-bottom: 8px;
+  box-shadow: 0 3px 12px rgba(37, 89, 195, 0.06);
   text-align: left;
   color: var(--text);
   font-weight: 400;
 }
 
+.agent-card.active {
+  border-left-color: var(--success);
+}
+
+.agent-card.stopped {
+  border-left-color: var(--line);
+  background: rgba(255, 255, 255, 0.75);
+}
+
 .agent-card-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-.agent-id {
+.agent-card-info {
   flex: 1;
+  min-width: 0;
+}
+
+.agent-name {
+  display: block;
   font-size: 13px;
-  font-family: "SF Mono", "Menlo", monospace;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.agent-card.stopped .agent-name {
+  color: var(--text-soft);
+}
+
+.agent-time {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 3px;
+}
+
+.agent-card-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.status-badge {
+  font-size: 10px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.agent-status-label {
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-weight: 600;
-}
-
-.agent-status-label.active {
+.status-badge.active {
   background: rgba(31, 138, 98, 0.12);
   color: var(--success);
 }
 
-.agent-status-label.stopped {
-  background: rgba(113, 129, 151, 0.12);
-  color: var(--text-soft);
+.status-badge.stopped {
+  background: var(--bg);
+  color: var(--text-faint);
+  font-weight: 500;
 }
 
-.agent-status-label.pending {
+.status-badge.pending {
   background: rgba(184, 122, 44, 0.12);
   color: var(--warning);
 }
 
-.agent-status-label.review {
-  background: rgba(37, 89, 195, 0.12);
+.status-badge.review {
+  background: rgba(37, 89, 195, 0.10);
   color: var(--accent);
 }
 
@@ -428,22 +467,14 @@ label {
 }
 
 .chat-agent-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(246, 249, 253, 0.86));
-  border: 1px solid rgba(104, 124, 154, 0.12);
-  border-radius: 20px;
-  margin-bottom: 10px;
-  font-size: 14px;
-  box-shadow: var(--shadow-soft);
+  display: none;
 }
 
 .chat-history {
   position: relative;
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
   padding: 8px 2px 10px;
   display: flex;
@@ -576,7 +607,7 @@ label {
 
 .chat-jump-latest {
   position: fixed;
-  bottom: calc(80px + env(safe-area-inset-bottom));
+  bottom: calc(155px + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   width: auto;
@@ -729,8 +760,7 @@ label {
 }
 
 .pill,
-.tier-filter button,
-.tab-btn {
+.tier-filter button {
   flex: 1;
   background: rgba(237, 242, 248, 0.96);
   color: var(--text-soft);
@@ -739,11 +769,45 @@ label {
   padding: 10px 12px;
 }
 
+/* tab 按钮：无背景色，底部横线指示选中态 */
+.tab-btn {
+  flex: 1;
+  background: none;
+  color: var(--text-soft);
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+  padding: 8px 12px 6px;
+  font-size: 12px;
+  font-weight: 500;
+  position: relative;
+}
+
+/* tab 选中态：accent 色文字 + 底部横线伪元素 */
+.tab-btn.active {
+  background: none;
+  color: var(--accent);
+  font-weight: 600;
+  border: none;
+}
+
+.tab-btn.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* 共享选中态：深色背景（不含 tab-btn，tab-btn 用独立横线样式） */
 .pill.active,
 .memory-scope-switch button.active,
 .memory-filter-row button.active,
-.tier-filter button.active,
-.tab-btn.active {
+.tier-filter button.active {
   background: rgba(22, 32, 51, 0.94);
   color: #fff;
   border-color: rgba(22, 32, 51, 0.94);
@@ -921,10 +985,9 @@ label {
   bottom: 0;
   z-index: 100;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  padding: 10px 12px max(10px, env(safe-area-inset-bottom));
-  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  padding: 4px 12px max(14px, env(safe-area-inset-bottom));
   background: rgba(244, 247, 251, 0.96);
   border-top: 1px solid rgba(97, 117, 149, 0.12);
   backdrop-filter: blur(16px);
@@ -1036,3 +1099,160 @@ label {
     animation: none !important;
   }
 }
+
+/* 登录覆盖层 */
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--bg, #f5f5f7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--card-bg, #fff);
+  border-radius: 1rem;
+  padding: 2rem 1.5rem;
+  box-shadow: 0 4px 24px rgba(0,0,0,.08);
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+}
+
+.login-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0;
+  text-align: center;
+}
+
+.login-desc {
+  margin: 0;
+  color: var(--text-secondary, #666);
+  font-size: .9rem;
+  text-align: center;
+}
+
+.login-input {
+  width: 100%;
+  padding: .6rem .75rem;
+  border: 1px solid var(--border, #ddd);
+  border-radius: .5rem;
+  font-size: .95rem;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.login-input:focus {
+  border-color: var(--accent, #007aff);
+}
+
+.login-error {
+  margin: 0;
+  color: #e53e3e;
+  font-size: .85rem;
+  text-align: center;
+}
+
+.login-submit {
+  width: 100%;
+  padding: .7rem;
+  border: none;
+  border-radius: .5rem;
+  background: var(--accent, #007aff);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.login-submit:active { opacity: .85; }
+
+/* topbar 退出按钮 */
+.logout-btn {
+  background: none;
+  border: 1px solid var(--border, #ddd);
+  border-radius: .4rem;
+  padding: .2rem .55rem;
+  font-size: .8rem;
+  cursor: pointer;
+  color: var(--text-secondary, #666);
+}
+
+/* 设置页 */
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+  padding: 1.2rem 1rem;
+}
+
+.settings-hint {
+  font-size: .85rem;
+  color: var(--text-secondary, #888);
+  padding: .4rem .6rem;
+  background: var(--bg, #f5f5f7);
+  border-radius: .4rem;
+}
+
+.settings-label {
+  font-size: .82rem;
+  font-weight: 500;
+  color: var(--text-secondary, #666);
+}
+
+.settings-input {
+  width: 100%;
+  padding: .55rem .75rem;
+  border: 1px solid var(--border, #ddd);
+  border-radius: .5rem;
+  font-size: .9rem;
+  box-sizing: border-box;
+  outline: none;
+  background: var(--card-bg, #fff);
+}
+
+.settings-input:focus {
+  border-color: var(--accent, #007aff);
+}
+
+.settings-input:disabled {
+  background: var(--bg, #f5f5f7);
+  color: var(--text-secondary, #999);
+}
+
+.settings-save {
+  align-self: flex-end;
+  padding: .45rem 1.2rem;
+  border: none;
+  border-radius: .5rem;
+  background: var(--accent, #007aff);
+  color: #fff;
+  font-size: .9rem;
+  cursor: pointer;
+}
+
+.settings-save:active { opacity: .85; }
+
+.settings-msg {
+  font-size: .82rem;
+  text-align: center;
+  margin: 0;
+}
+
+/* topbar 退出按钮 — 低调文字链接风格，覆盖前面的旧样式 */
+.logout-btn {
+  background: none;
+  border: none;
+  padding: .1rem .3rem;
+  font-size: .75rem;
+  color: var(--text-secondary, #999);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.logout-btn:hover { opacity: 1; }

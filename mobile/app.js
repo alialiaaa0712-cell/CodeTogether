@@ -1,6 +1,42 @@
 const SERVER = location.origin;
 const WS_PROTOCOL = location.protocol === "https:" ? "wss:" : "ws:";
-const WS_URL = `${WS_PROTOCOL}//${location.host}/ws`;
+
+const _LS_API_KEY = "ct_api_key";
+
+/**
+ * 从 localStorage 读取已存储的 API Key。
+ *
+ * 返回值:
+ *   存储的 key 字符串；未登录时返回空字符串。
+ */
+function getApiKey() {
+  return localStorage.getItem(_LS_API_KEY) || "";
+}
+
+/**
+ * 构造携带 API Key 的 Authorization 请求头对象。
+ *
+ * 返回值:
+ *   包含 Authorization 字段的对象；无 key 时返回空对象。
+ */
+function authHeaders() {
+  const key = getApiKey();
+  return key ? { Authorization: `Bearer ${key}` } : {};
+}
+
+/**
+ * 显示全屏登录覆盖层。
+ */
+function showLogin() {
+  document.getElementById("login-overlay").style.display = "flex";
+}
+
+/**
+ * 隐藏全屏登录覆盖层。
+ */
+function hideLogin() {
+  document.getElementById("login-overlay").style.display = "none";
+}
 
 const _LS_KEY = "ct_ui_state";
 
@@ -47,6 +83,7 @@ const state = {
   chatPollTimer: null,
   chatShouldAutoScroll: true,
   showJumpToLatest: false,
+  isAdmin: false,
 };
 
 const dom = {
@@ -58,6 +95,7 @@ const dom = {
     agents: document.getElementById("view-agents"),
     chat: document.getElementById("view-chat"),
     memory: document.getElementById("view-memory"),
+    settings: document.getElementById("view-settings"),
   },
   projectGroups: document.getElementById("project-groups"),
   agentOverview: document.getElementById("agent-overview"),
@@ -85,6 +123,16 @@ const dom = {
   memoryScopeCurrent: document.getElementById("memory-scope-current"),
   memoryScopeAll: document.getElementById("memory-scope-all"),
   toast: document.getElementById("toast"),
+  logoutBtn: document.getElementById("logout-btn"),
+  loginKeyInput: document.getElementById("login-key-input"),
+  loginSubmit: document.getElementById("login-submit"),
+  loginError: document.getElementById("login-error"),
+  settingsApiKey: document.getElementById("settings-api-key"),
+  settingsBaseUrl: document.getElementById("settings-base-url"),
+  settingsModel: document.getElementById("settings-model"),
+  settingsSave: document.getElementById("settings-save"),
+  settingsMsg: document.getElementById("settings-msg"),
+  settingsReadonlyHint: document.getElementById("settings-readonly-hint"),
 };
 
 /**
@@ -152,18 +200,37 @@ function showToast(text) {
 }
 
 /**
- * 更新页面顶部的连接状态样式与文案。
+ * 更新页面顶部的连接状态徽章文字和样式。
+ *
+ * 参数:
+ *   connected: 是否已连接。
  */
 function setConnectionStatus(connected) {
-  dom.connStatus.textContent = connected ? "已连接" : "未连接";
+  dom.connStatus.textContent = connected ? "● 已连接" : "未连接";
   dom.connStatus.className = `conn-status ${connected ? "connected" : "disconnected"}`;
 }
 
 /**
- * 请求 JSON 接口并在响应异常时抛出错误。
+ * 请求 JSON 接口，自动注入认证头；401 时清除 key 并跳转到登录页。
+ *
+ * 参数:
+ *   url: 请求地址。
+ *   options: fetch 选项，headers 字段会与认证头合并。
+ *
+ * 返回值:
+ *   解析后的 JSON 对象；204 或空响应时返回 null。
  */
 async function fetchJson(url, options = {}) {
-  const resp = await fetch(url, options);
+  const merged = {
+    ...options,
+    headers: { ...authHeaders(), ...(options.headers || {}) },
+  };
+  const resp = await fetch(url, merged);
+  if (resp.status === 401) {
+    localStorage.removeItem(_LS_API_KEY);
+    showLogin();
+    throw new Error("401 Unauthorized");
+  }
   if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
   if (resp.status === 204 || resp.headers.get("content-length") === "0") return null;
   return resp.json();
@@ -175,6 +242,37 @@ async function fetchJson(url, options = {}) {
 function projectLabel(session) {
   if (!session.cwd) return "未知项目";
   return session.cwd.replace(/\/$/, "").split("/").pop() || session.cwd;
+}
+
+/**
+ * 生成 Agent 卡片显示名称，取 cwd 最后一段路径。
+ *
+ * 参数:
+ *   session: Session 对象。
+ *
+ * 返回值:
+ *   显示名称字符串。
+ */
+function agentLabel(session) {
+  if (session.cwd) {
+    const parts = session.cwd.replace(/\/$/, "").split("/");
+    return parts[parts.length - 1] || session.id.slice(0, 8);
+  }
+  return session.id.slice(0, 8);
+}
+
+/**
+ * 将 Agent 状态值转换为中文显示文字。
+ *
+ * 参数:
+ *   status: 状态字符串（active/stopped/pending/review）。
+ *
+ * 返回值:
+ *   对应的中文文字。
+ */
+function statusText(status) {
+  const map = { active: "运行中", stopped: "停止", pending: "等待", review: "审查中" };
+  return map[status] || status;
 }
 
 /**
@@ -192,10 +290,10 @@ function renderAgentOverview() {
     { label: "在线中", value: activeCount },
     { label: "项目", value: projectCount },
   ];
-  dom.agentOverview.innerHTML = cards.map((card) => `
+  dom.agentOverview.innerHTML = cards.map((card, i) => `
     <div class="overview-tile">
       <span class="overview-label">${escapeHtml(card.label)}</span>
-      <span class="overview-value">${escapeHtml(card.value)}</span>
+      <span class="overview-value" style="${i === 1 ? 'color:var(--accent)' : ''}">${escapeHtml(String(card.value))}</span>
     </div>
   `).join("");
 }
@@ -226,14 +324,17 @@ function renderAgents() {
       <div class="project-group">
         <div class="project-label">${escapeHtml(project)}</div>
         ${sessions.map((s) => `
-          <button class="agent-card" type="button" data-session-id="${escapeHtml(s.id)}">
+          <button class="agent-card ${escapeHtml(s.status)}" type="button" data-session-id="${escapeHtml(s.id)}">
             <div class="agent-card-row">
-              <span class="status-dot ${escapeHtml(s.status)}"></span>
-              <span class="agent-id">${escapeHtml(s.id)}</span>
-              <span class="agent-status-label ${escapeHtml(s.status)}">${escapeHtml(s.status)}</span>
-              <span class="agent-delete-btn" role="button" data-delete-id="${escapeHtml(s.id)}" title="删除">✕</span>
+              <div class="agent-card-info">
+                <span class="agent-name">${escapeHtml(agentLabel(s))}</span>
+                <span class="agent-time">${escapeHtml(formatTime(s.started_at))}</span>
+              </div>
+              <div class="agent-card-right">
+                <span class="status-badge ${escapeHtml(s.status)}">${escapeHtml(statusText(s.status))}</span>
+                <span class="agent-delete-btn" role="button" data-delete-id="${escapeHtml(s.id)}" title="删除">✕</span>
+              </div>
             </div>
-            <div class="hint">${escapeHtml(formatTime(s.started_at))}</div>
           </button>
         `).join("")}
       </div>
@@ -266,14 +367,19 @@ function openChat(sessionId) {
   saveUiState();
 
   const session = state.sessions.find((s) => s.id === sessionId);
-  dom.chatAgentInfo.innerHTML = session
-    ? `<span class="status-dot ${escapeHtml(session.status)}"></span><strong>${escapeHtml(projectLabel(session))}</strong><span class="hint" style="margin-left:8px">${escapeHtml(session.id)}</span>`
-    : escapeHtml(sessionId);
+  const topbarTitle = document.querySelector(".topbar-title");
+  if (topbarTitle) {
+    topbarTitle._origText = topbarTitle._origText || topbarTitle.textContent;
+    topbarTitle.textContent = session ? session.id.slice(0, 8) : sessionId.slice(0, 8);
+  }
+  dom.connStatus.style.display = "none";
+  if (dom.logoutBtn) dom.logoutBtn.style.display = "none";
+  dom.chatAgentInfo.innerHTML = "";
 
   // 切换视图
   Object.values(dom.views).forEach((v) => v.classList.remove("active"));
   dom.views.chat.classList.add("active");
-  dom.topbarMain.style.display = "none";
+  document.body.classList.add("in-chat");
   dom.backBtn.style.display = "flex";
   document.querySelector(".tab-bar").style.display = "none";
   updateJumpToLatestButton();
@@ -298,8 +404,15 @@ function closeChat() {
   state.showJumpToLatest = false;
   clearInterval(state.chatPollTimer);
   updateJumpToLatestButton();
+  const topbarTitleOnClose = document.querySelector(".topbar-title");
+  if (topbarTitleOnClose && topbarTitleOnClose._origText) {
+    topbarTitleOnClose.textContent = topbarTitleOnClose._origText;
+  }
+  dom.connStatus.style.display = "";
+  if (dom.logoutBtn) dom.logoutBtn.style.display = getApiKey() ? "" : "none";
   Object.values(dom.views).forEach((v) => v.classList.remove("active"));
   dom.views.agents.classList.add("active");
+  document.body.classList.remove("in-chat");
   dom.topbarMain.style.display = "";
   dom.backBtn.style.display = "none";
   document.querySelector(".tab-bar").style.display = "";
@@ -322,6 +435,11 @@ function switchTab(tab) {
     loadMemories().catch((e) => {
       console.error("加载记忆列表失败", e);
       showToast("记忆列表加载失败");
+    });
+  }
+  if (tab === "settings") {
+    loadSettings().catch((e) => {
+      console.error("加载设置失败", e);
     });
   }
 }
@@ -842,8 +960,53 @@ function upsertSession(session) {
   }
 }
 
+/**
+ * 构造携带 api_key query param 的 WebSocket URL。
+ *
+ * 返回值:
+ *   带认证参数的完整 WebSocket URL 字符串。
+ */
+function buildWsUrl() {
+  const key = getApiKey();
+  return `${WS_PROTOCOL}//${location.host}/ws${key ? "?api_key=" + encodeURIComponent(key) : ""}`;
+}
+
+/**
+ * 加载设置页配置，判断 admin 权限后决定是否显示保存按钮。
+ *
+ * 调用 GET /config 获取配置（api_key 脱敏），再调用 GET /admin/keys 判断是否 admin。
+ * 非 admin 时输入框禁用，显示只读提示。
+ *
+ * 返回值:
+ *   无。
+ */
+async function loadSettings() {
+  try {
+    const configs = await fetchJson(`${SERVER}/config`);
+    const map = Object.fromEntries(configs.map((c) => [c.key, c.value || ""]));
+    dom.settingsApiKey.value = map.extractor_api_key || "";
+    dom.settingsBaseUrl.value = map.extractor_base_url || "";
+    dom.settingsModel.value = map.extractor_model || "";
+  } catch (_) {}
+
+  try {
+    await fetchJson(`${SERVER}/admin/keys`);
+    state.isAdmin = true;
+  } catch (_) {
+    state.isAdmin = false;
+  }
+
+  const readonly = !state.isAdmin;
+  dom.settingsApiKey.disabled = readonly;
+  dom.settingsBaseUrl.disabled = readonly;
+  dom.settingsModel.disabled = readonly;
+  dom.settingsSave.style.display = readonly ? "none" : "";
+  dom.settingsReadonlyHint.style.display = readonly ? "" : "none";
+  dom.settingsMsg.style.display = "none";
+}
+
 function connectWebSocket() {
-  const ws = new WebSocket(WS_URL);
+  const ws = new WebSocket(buildWsUrl());
   ws.onopen = () => { setConnectionStatus(true); state.reconnectDelay = 1000; };
   ws.onmessage = (event) => {
     const payload = JSON.parse(event.data);
@@ -879,6 +1042,13 @@ function connectWebSocket() {
 
 async function init() {
   setConnectionStatus(false);
+
+  if (!getApiKey()) {
+    showLogin();
+    return;
+  }
+  hideLogin();
+  if (dom.logoutBtn) dom.logoutBtn.style.display = "";
 
   const saved = loadUiState();
   if (saved.memoryFilter) state.memoryFilter = saved.memoryFilter;
@@ -966,6 +1136,77 @@ dom.memoryFilterApply.addEventListener("click", () => {
 dom.memorySortTime.addEventListener("click", () => { state.draftMemorySort = "time"; updateMemoryDrawerControls(); });
 dom.memorySortScore.addEventListener("click", () => { state.draftMemorySort = "score"; updateMemoryDrawerControls(); });
 dom.memorySortFeedback.addEventListener("click", () => { state.draftMemorySort = "feedback"; updateMemoryDrawerControls(); });
+
+if (dom.logoutBtn) {
+  dom.logoutBtn.addEventListener("click", () => {
+    localStorage.removeItem(_LS_API_KEY);
+    location.reload();
+  });
+}
+
+if (dom.loginSubmit) {
+  dom.loginSubmit.addEventListener("click", async () => {
+    const key = (dom.loginKeyInput.value || "").trim();
+    if (!key) {
+      dom.loginError.textContent = "请输入 API Key";
+      dom.loginError.style.display = "";
+      return;
+    }
+    dom.loginError.style.display = "none";
+    dom.loginSubmit.disabled = true;
+    try {
+      const resp = await fetch("/agents", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      if (resp.status === 401) {
+        dom.loginError.textContent = "API Key 无效，请重新输入";
+        dom.loginError.style.display = "";
+        return;
+      }
+      localStorage.setItem(_LS_API_KEY, key);
+      hideLogin();
+      await init();
+    } catch (_) {
+      dom.loginError.textContent = "网络错误，请重试";
+      dom.loginError.style.display = "";
+    } finally {
+      dom.loginSubmit.disabled = false;
+    }
+  });
+}
+
+if (dom.loginKeyInput) {
+  dom.loginKeyInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") dom.loginSubmit.click();
+  });
+}
+
+if (dom.settingsSave) {
+  dom.settingsSave.addEventListener("click", async () => {
+    dom.settingsSave.disabled = true;
+    dom.settingsMsg.style.display = "none";
+    try {
+      await fetchJson(`${SERVER}/config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          extractor_api_key: dom.settingsApiKey.value.trim() || null,
+          extractor_base_url: dom.settingsBaseUrl.value.trim() || null,
+          extractor_model: dom.settingsModel.value.trim() || null,
+        }),
+      });
+      dom.settingsMsg.textContent = "已保存";
+      dom.settingsMsg.style.color = "var(--accent, #007aff)";
+      dom.settingsMsg.style.display = "";
+    } catch (_) {
+      dom.settingsMsg.textContent = "保存失败，请重试";
+      dom.settingsMsg.style.color = "#e53e3e";
+      dom.settingsMsg.style.display = "";
+    } finally {
+      dom.settingsSave.disabled = false;
+    }
+  });
+}
 
 init().catch((e) => {
   console.error("初始化失败", e);

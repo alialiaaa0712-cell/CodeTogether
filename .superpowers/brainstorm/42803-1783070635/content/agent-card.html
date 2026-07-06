@@ -1,0 +1,98 @@
+<h2>Agent 卡片样式</h2>
+<p class="subtitle">选择 Agent 列表中每个卡片的设计风格</p>
+
+<div class="cards">
+  <div class="card" data-choice="A" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #eef2f7; padding: 16px; border-radius: 12px; margin-bottom: 12px;">
+      <!-- 当前风格 -->
+      <div style="background: rgba(255,255,255,0.85); border-radius: 16px; padding: 14px; box-shadow: 0 4px 12px rgba(37,89,195,0.06); margin-bottom: 8px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#2559c3,#4a7ff0); flex-shrink:0;"></div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:13px; font-weight:600; color:#162033; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">search/CodeTogether</div>
+            <div style="font-size:11px; color:#5b6678; margin-top:2px;">工具调用中 · 刚刚</div>
+          </div>
+          <div style="width:8px; height:8px; border-radius:50%; background:#1f8a62; flex-shrink:0;"></div>
+        </div>
+      </div>
+      <div style="background: rgba(255,255,255,0.85); border-radius: 16px; padding: 14px; box-shadow: 0 4px 12px rgba(37,89,195,0.06);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#5b6678,#7d8797); flex-shrink:0;"></div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:13px; font-weight:600; color:#162033; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">demo/project</div>
+            <div style="font-size:11px; color:#5b6678; margin-top:2px;">已停止 · 5分钟前</div>
+          </div>
+          <div style="width:8px; height:8px; border-radius:50%; background:#dfe7f3; flex-shrink:0;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — 现有卡片</h3>
+      <p>渐变色块图标 + 白底卡片，微调间距和阴影</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="B" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #eef2f7; padding: 16px; border-radius: 12px; margin-bottom: 12px;">
+      <!-- 加入左侧状态条 -->
+      <div style="background: rgba(255,255,255,0.9); border-radius: 16px; padding: 14px; box-shadow: 0 4px 16px rgba(37,89,195,0.08); margin-bottom: 8px; border-left: 4px solid #1f8a62; overflow:hidden;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:13px; font-weight:600; color:#162033; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">search/CodeTogether</div>
+            <div style="font-size:11px; color:#5b6678; margin-top:2px;">工具调用中 · 刚刚</div>
+          </div>
+          <span style="font-size:10px; background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:20px; font-weight:500; white-space:nowrap;">运行中</span>
+        </div>
+      </div>
+      <div style="background: rgba(255,255,255,0.9); border-radius: 16px; padding: 14px; box-shadow: 0 4px 16px rgba(37,89,195,0.08); border-left: 4px solid #dfe7f3; overflow:hidden;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:13px; font-weight:600; color:#162033; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">demo/project</div>
+            <div style="font-size:11px; color:#5b6678; margin-top:2px;">已停止 · 5分钟前</div>
+          </div>
+          <span style="font-size:10px; background:#f4f7fb; color:#7d8797; padding:2px 8px; border-radius:20px; font-weight:500; white-space:nowrap;">停止</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — 左侧状态条</h3>
+      <p>左边框颜色表示状态，右侧彩色徽章，去掉图标更干净</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="C" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #eef2f7; padding: 16px; border-radius: 12px; margin-bottom: 12px;">
+      <!-- 横向信息条 -->
+      <div style="background: rgba(255,255,255,0.9); border-radius: 16px; padding: 14px; box-shadow: 0 4px 16px rgba(37,89,195,0.08); margin-bottom: 8px;">
+        <div style="display:flex; align-items:flex-start; gap:10px;">
+          <div style="width:10px; height:10px; border-radius:50%; background:#1f8a62; flex-shrink:0; margin-top:3px;"></div>
+          <div style="flex:1;">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">
+              <div style="font-size:13px; font-weight:600; color:#162033;">CodeTogether</div>
+              <div style="font-size:10px; color:#7d8797;">刚刚</div>
+            </div>
+            <div style="font-size:11px; color:#2559c3;">工具调用中</div>
+            <div style="font-size:10px; color:#7d8797; margin-top:2px;">search/CodeTogether</div>
+          </div>
+        </div>
+      </div>
+      <div style="background: rgba(255,255,255,0.9); border-radius: 16px; padding: 14px; box-shadow: 0 4px 16px rgba(37,89,195,0.08);">
+        <div style="display:flex; align-items:flex-start; gap:10px;">
+          <div style="width:10px; height:10px; border-radius:50%; background:#dfe7f3; flex-shrink:0; margin-top:3px;"></div>
+          <div style="flex:1;">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;">
+              <div style="font-size:13px; font-weight:600; color:#162033;">demo</div>
+              <div style="font-size:10px; color:#7d8797;">5分钟前</div>
+            </div>
+            <div style="font-size:11px; color:#7d8797;">已停止</div>
+            <div style="font-size:10px; color:#7d8797; margin-top:2px;">demo/project</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — 简洁列表</h3>
+      <p>圆点状态指示，项目名和路径分行显示，极简风格</p>
+    </div>
+  </div>
+</div>

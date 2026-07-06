@@ -8,10 +8,12 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session as DBSession
 
 from server.database import get_db
+from server.models import ApiKey
 from server.models import Memory as MemoryModel
 from server.models import MemoryFeedbackLog as MemoryFeedbackLogModel
 from server.models import MemorySearchExposure as MemorySearchExposureModel
 from server.models import Session as SessionModel
+from server.routers.auth import get_current_key
 from server.schemas import MemoryBatchDeleteRequest, MemoryCreate, MemoryFeedbackRequest, MemoryOut, MemorySearchRequest, MemoryUpdate
 
 router = APIRouter(prefix="/memory", tags=["memory"])
@@ -142,7 +144,9 @@ def _record_search_exposures(
 
 
 def _was_exposed_to_session(db: DBSession, session_id: str, memory_id: str, now: float) -> bool:
-    """判断指定记忆是否曾在曝光有效期内返回给当前会话。
+    """判断指定记忆是否曾在曝光有效期内返回给当前会话或其父/子会话。
+
+    父子 session 共享曝光上下文：子 Agent 搜索到的记忆，父 Agent 可以反馈；反之亦然。
 
     参数:
         db: 数据库会话。
@@ -153,8 +157,17 @@ def _was_exposed_to_session(db: DBSession, session_id: str, memory_id: str, now:
     返回值:
         若命中有效曝光记录则返回 True，否则返回 False。
     """
+    session = db.get(SessionModel, session_id)
+    # 收集需要检查的 session ID：自身 + 父 session + 所有子 session
+    related_ids = {session_id}
+    if session:
+        if session.parent_id:
+            related_ids.add(session.parent_id)
+        child_ids = db.query(SessionModel.id).filter(SessionModel.parent_id == session_id).all()
+        related_ids.update(row.id for row in child_ids)
+
     return db.query(MemorySearchExposureModel).filter(
-        MemorySearchExposureModel.session_id == session_id,
+        MemorySearchExposureModel.session_id.in_(related_ids),
         MemorySearchExposureModel.memory_id == memory_id,
         MemorySearchExposureModel.exposed_at >= now - _EXPOSURE_TTL_SECONDS,
     ).first() is not None
@@ -176,7 +189,7 @@ def _delete_memory_with_relations(db: DBSession, memory: MemoryModel) -> None:
 
 
 @router.post("", response_model=MemoryOut)
-def create_memory(body: MemoryCreate, db: DBSession = Depends(get_db)):
+def create_memory(body: MemoryCreate, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     创建新记忆条目，默认状态为 pending，tier 为 short。
 
@@ -195,7 +208,7 @@ def create_memory(body: MemoryCreate, db: DBSession = Depends(get_db)):
 
 
 @router.post("/search", response_model=List[MemoryOut])
-def search_memories(body: MemorySearchRequest, db: DBSession = Depends(get_db)):
+def search_memories(body: MemorySearchRequest, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """按 Agent 显式给出的 query 搜索记忆，并记录本次曝光。
 
     参数:
@@ -220,7 +233,7 @@ def search_memories(body: MemorySearchRequest, db: DBSession = Depends(get_db)):
 
 
 @router.post("/{memory_id}/feedback", response_model=MemoryOut)
-def submit_memory_feedback(memory_id: str, body: MemoryFeedbackRequest, db: DBSession = Depends(get_db)):
+def submit_memory_feedback(memory_id: str, body: MemoryFeedbackRequest, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """提交 Agent 对记忆的显式反馈，并按累计积分驱动状态流转。
 
     参数:
@@ -275,6 +288,7 @@ def list_memories(
     status: Optional[str] = None,
     tier: Optional[str] = None,
     db: DBSession = Depends(get_db),
+    _key: Optional[ApiKey] = Depends(get_current_key),
 ):
     """
     列出记忆，支持按 project_id、status、tier 过滤，最多返回 200 条。
@@ -299,7 +313,7 @@ def list_memories(
 
 
 @router.patch("/{memory_id}", response_model=MemoryOut)
-def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(get_db)):
+def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     仅支持两类人工确认流转：pending 启用为短期记忆，或 review 短期记忆晋升为长期记忆。
 
@@ -369,7 +383,7 @@ def batch_delete_memories(body: MemoryBatchDeleteRequest, db: DBSession = Depend
 
 
 @router.delete("/{memory_id}", status_code=204)
-def delete_memory(memory_id: str, db: DBSession = Depends(get_db)):
+def delete_memory(memory_id: str, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     删除指定记忆及其关联曝光与反馈记录。
 

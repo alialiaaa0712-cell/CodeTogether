@@ -6,7 +6,7 @@
   <meta name="description" content="CodeTogether Mobile Web App">
   <title>CodeTogether</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="style.css?v=20260702b">
+  <link rel="stylesheet" href="style.css?v=20260703n">
 </head>
 <body>
   <header class="topbar">
@@ -14,6 +14,7 @@
     <div id="topbar-main">
       <span class="topbar-title">CodeTogether</span>
       <span id="conn-status" class="conn-status disconnected">未连接</span>
+      <button id="logout-btn" class="logout-btn" type="button" style="display:none">退出</button>
     </div>
   </header>
 
@@ -38,11 +39,6 @@
 
     <!-- 聊天页：点击 agent 后进入 -->
     <section id="view-chat" class="view">
-      <section class="view-section-head compact-head">
-        <div>
-          <h2>聊天</h2>
-        </div>
-      </section>
       <div id="chat-agent-info" class="chat-agent-info"></div>
       <div id="chat-history" class="chat-history"></div>
       <form id="chat-form" class="chat-form">
@@ -73,6 +69,25 @@
         <div class="memory-board-list">
           <div id="memory-list" class="memory-list"></div>
         </div>
+      </div>
+    </section>
+    <!-- 设置页 -->
+    <section id="view-settings" class="view">
+      <section class="view-section-head compact-head">
+        <div>
+          <h2>设置</h2>
+        </div>
+      </section>
+      <div class="card settings-card">
+        <div id="settings-readonly-hint" class="settings-hint" style="display:none">仅 Admin 可修改配置</div>
+        <label class="settings-label" for="settings-api-key">记忆提取 API Key</label>
+        <input id="settings-api-key" class="settings-input" type="password" placeholder="留空使用服务端环境变量" autocomplete="off">
+        <label class="settings-label" for="settings-base-url">Base URL</label>
+        <input id="settings-base-url" class="settings-input" type="text" placeholder="https://...">
+        <label class="settings-label" for="settings-model">模型名</label>
+        <input id="settings-model" class="settings-input" type="text" placeholder="gpt-5.4">
+        <button id="settings-save" class="settings-save" type="button" style="display:none">保存</button>
+        <p id="settings-msg" class="settings-msg" style="display:none"></p>
       </div>
     </section>
   </main>
@@ -127,9 +142,19 @@
   <nav class="tab-bar">
     <button class="tab-btn active" data-tab="agents" type="button">Agent</button>
     <button class="tab-btn" data-tab="memory" type="button">记忆</button>
+    <button class="tab-btn" data-tab="settings" type="button">设置</button>
   </nav>
 
+  <div id="login-overlay" class="login-overlay" style="display:none">
+    <div class="login-card">
+      <h1 class="login-title">CodeTogether</h1>
+      <p class="login-desc">请输入 API Key 以继续</p>
+      <input id="login-key-input" class="login-input" type="password" placeholder="ct-xxxxxxxx..." autocomplete="off">
+      <p id="login-error" class="login-error" style="display:none"></p>
+      <button id="login-submit" class="login-submit" type="button">确认</button>
+    </div>
+  </div>
   <div id="toast" class="toast"></div>
-  <script src="app.js?v=20260702b"></script>
+  <script src="app.js?v=20260703n"></script>
 </body>
 </html>

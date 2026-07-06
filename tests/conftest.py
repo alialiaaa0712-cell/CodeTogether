@@ -7,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from server.database import Base, get_db
 from server.main import app
+from server.routers.auth import get_current_key
 from fastapi.testclient import TestClient
 
 # 使用 SQLite 内存数据库，避免依赖 MySQL
@@ -31,9 +32,28 @@ def db(engine):
     finally:
         session.close()
 
+@pytest.fixture(autouse=True)
+def _restore_broadcast_manager():
+    """
+    每个测试前后还原 broadcast._manager，防止 test_broadcast.py 中替换 MagicMock
+    后污染后续依赖真实 ConnectionManager 的 WebSocket 测试。
+    """
+    from server import broadcast as bc
+    from server.main import manager as real_manager
+    original = bc._manager
+    bc._manager = real_manager
+    yield
+    bc._manager = original
+
+
 @pytest.fixture
 def client(engine):
+    from server.models import ApiKey
     TestingSessionLocal = sessionmaker(bind=engine)
+    # 清空 ApiKey 表，防止其他测试遗留的活跃 key 影响 WS 认证逻辑
+    with TestingSessionLocal() as s:
+        s.query(ApiKey).delete()
+        s.commit()
     def override_get_db():
         session = TestingSessionLocal()
         try:
@@ -41,4 +61,33 @@ def client(engine):
         finally:
             session.close()
     app.dependency_overrides[get_db] = override_get_db
+    # 测试中跳过 auth 验证，返回 None 表示已认证（非 admin 路由可接受）
+    app.dependency_overrides[get_current_key] = lambda: None
     return TestClient(app)
+
+
+@pytest.fixture
+def auth_headers():
+    """返回空认证头，测试中已通过 dependency_overrides 跳过 auth 验证。"""
+    return {}
+
+
+@pytest.fixture
+def client_no_auth(engine):
+    """提供一个不注入认证跳过的客户端，用于测试 auth 逻辑本身。"""
+    from sqlalchemy.orm import sessionmaker
+    from server.database import get_db
+    TestingSessionLocal = sessionmaker(bind=engine)
+    def override_get_db():
+        session = TestingSessionLocal()
+        try:
+            yield session
+        finally:
+            session.close()
+    # 保存并清除 get_current_key 的 override，确保真实认证路径生效
+    saved = app.dependency_overrides.pop(get_current_key, None)
+    app.dependency_overrides[get_db] = override_get_db
+    yield TestClient(app)
+    # 测试结束后恢复原 override，避免污染其他测试
+    if saved is not None:
+        app.dependency_overrides[get_current_key] = saved

@@ -8,25 +8,26 @@ from sqlalchemy.orm import Session as DBSession
 
 from server.database import get_db
 from server.models import Event as EventModel, Session as SessionModel
+from server.models import ApiKey
+from server.routers.auth import get_current_key
 from server.schemas import EventCreate, EventOut, SessionOut
 
 router = APIRouter(prefix="/events", tags=["events"])
 
 
-async def _broadcast_session_update(request: Request, session: SessionModel) -> None:
+async def _broadcast_session_update(session: SessionModel) -> None:
     """
     在事件导致会话首次出现时同步广播会话快照，避免移动端状态页漏掉新会话。
 
     参数:
-        request: 当前请求对象，用于访问应用级 WebSocket 管理器。
         session: 需要广播的会话 ORM 对象。
 
     返回值:
         无。
     """
     try:
-        manager = request.app.state.ws_manager
-        await manager.broadcast({
+        from server import broadcast
+        await broadcast.publish({
             "type": "agent_update",
             "data": SessionOut.model_validate(session).model_dump(),
         })
@@ -35,10 +36,16 @@ async def _broadcast_session_update(request: Request, session: SessionModel) -> 
 
 
 @router.post("", response_model=EventOut)
-async def receive_event(body: EventCreate, request: Request, db: DBSession = Depends(get_db)):
+async def receive_event(
+    body: EventCreate,
+    request: Request,
+    db: DBSession = Depends(get_db),
+    _key=Depends(get_current_key),
+):
     """
     接收 hook 上报的工具调用事件；若会话首次出现，则先创建并广播会话快照，再广播事件本身。
     若事件携带 parent_session_id，同时回写子 Session 的 parent_id（首次写入时）。
+    需要有效的 Bearer Token 才能写入。
 
     参数:
         body: 事件上报请求体。
@@ -83,13 +90,13 @@ async def receive_event(body: EventCreate, request: Request, db: DBSession = Dep
     db.refresh(event)
 
     if created_session is not None:
-        await _broadcast_session_update(request, created_session)
+        await _broadcast_session_update(created_session)
     elif updated_session is not None:
-        await _broadcast_session_update(request, updated_session)
+        await _broadcast_session_update(updated_session)
 
     try:
-        manager = request.app.state.ws_manager
-        await manager.broadcast({
+        from server import broadcast
+        await broadcast.publish({
             "type": "event",
             "data": EventOut.model_validate(event).model_dump(),
         })
@@ -100,7 +107,7 @@ async def receive_event(body: EventCreate, request: Request, db: DBSession = Dep
 
 
 @router.get("", response_model=List[EventOut])
-def list_events(session_id: Optional[str] = None, include_children: bool = False, db: DBSession = Depends(get_db)):
+def list_events(session_id: Optional[str] = None, include_children: bool = False, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
     列出事件；include_children=true 时同时包含所有子 Agent 的事件。
 

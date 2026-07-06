@@ -323,3 +323,24 @@ def test_trigger_extraction_prefers_messages_and_limits_saved_memories(db):
     assert captured["project_id"] == "proj-1"
     assert len(saved) == 3
     assert [item.title for item in saved] == ["A", "B", "C"]
+
+
+def test_create_session_with_repo_url_creates_project(client, db, auth_headers):
+    """传入 repo_url 时，服务端应自动创建对应 Project 并绑定 Session。"""
+    resp = client.post("/agents", json={
+        "id": "sess-repo-1",
+        "cwd": "/home/alice/my-repo",
+        "repo_url": "https://github.com/team/my-repo.git",
+    }, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["project_id"] is not None
+
+    # 再次创建同 repo_url 的 session，应复用同一个 project
+    resp2 = client.post("/agents", json={
+        "id": "sess-repo-2",
+        "cwd": "/home/bob/my-repo",
+        "repo_url": "https://github.com/team/my-repo.git",
+    }, headers=auth_headers)
+    assert resp2.status_code == 200
+    assert resp2.json()["project_id"] == data["project_id"]
