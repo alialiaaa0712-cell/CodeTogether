@@ -15,6 +15,7 @@ jobs:
           host: ${{ secrets.ECS_HOST }}
           username: root
           key: ${{ secrets.ECS_SSH_KEY }}
+          command_timeout: 30m
           script: |
             cd /home/ecs-assist-user/CodeTogether
             git pull
