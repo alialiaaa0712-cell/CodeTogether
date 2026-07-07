@@ -1,6 +1,6 @@
 {
   "env": {
-    "CODETOGETHER_SERVER": "http://127.0.0.1:7879"
+    "CODETOGETHER_SERVER": "http://127.0.0.1:7879,http://118.31.124.99:8000"
   },
   "hooks": {
     "PreToolUse": [
