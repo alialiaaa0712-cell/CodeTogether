@@ -400,3 +400,59 @@ def test_delete_memory_removes_pending_item(client):
 
     assert pending_delete.status_code == 204
     assert all(item["id"] != pending["id"] for item in pending_list.json())
+
+
+def test_feedback_allowed_when_child_agent_searched(client):
+    """验证子 Agent 搜索曝光过的记忆，父 Agent 可以提交反馈。"""
+    parent = client.post("/agents", json={"id": "parent-sess-001", "cwd": "/tmp/parent-001"}).json()
+    client.post("/agents", json={"id": "child-sess-001", "cwd": "/tmp/parent-001", "parent_id": "parent-sess-001"})
+
+    memory = client.post("/memory", json={
+        "project_id": parent["project_id"],
+        "title": "父子共享曝光测试",
+        "content": "子 Agent 搜索到的记忆，父 Agent 应能反馈",
+    }).json()
+    client.patch(f"/memory/{memory['id']}", json={"status": "active"})
+
+    # 子 Agent 搜索，产生曝光记录
+    client.post("/memory/search", json={
+        "query": "父子共享曝光测试",
+        "session_id": "child-sess-001",
+        "limit": 3,
+    })
+
+    # 父 Agent 提交反馈，应通过曝光校验
+    resp = client.post(f"/memory/{memory['id']}/feedback", json={
+        "session_id": "parent-sess-001",
+        "score": 1,
+        "reason": "父 Agent 确认子 Agent 找到的记忆有用",
+    })
+    assert resp.status_code == 200
+
+
+def test_feedback_allowed_when_parent_agent_searched(client):
+    """验证父 Agent 搜索曝光过的记忆，子 Agent 可以提交反馈。"""
+    parent = client.post("/agents", json={"id": "parent-sess-002", "cwd": "/tmp/parent-002"}).json()
+    client.post("/agents", json={"id": "child-sess-002", "cwd": "/tmp/parent-002", "parent_id": "parent-sess-002"})
+
+    memory = client.post("/memory", json={
+        "project_id": parent["project_id"],
+        "title": "父搜子反馈测试",
+        "content": "父 Agent 搜索到的记忆，子 Agent 应能反馈",
+    }).json()
+    client.patch(f"/memory/{memory['id']}", json={"status": "active"})
+
+    # 父 Agent 搜索，产生曝光记录
+    client.post("/memory/search", json={
+        "query": "父搜子反馈测试",
+        "session_id": "parent-sess-002",
+        "limit": 3,
+    })
+
+    # 子 Agent 提交反馈，应通过曝光校验
+    resp = client.post(f"/memory/{memory['id']}/feedback", json={
+        "session_id": "child-sess-002",
+        "score": 1,
+        "reason": "子 Agent 确认父 Agent 找到的记忆有用",
+    })
+    assert resp.status_code == 200
