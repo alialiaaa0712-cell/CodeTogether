@@ -315,7 +315,7 @@ def list_memories(
 @router.patch("/{memory_id}", response_model=MemoryOut)
 def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(get_db), _key: Optional[ApiKey] = Depends(get_current_key)):
     """
-    仅支持两类人工确认流转：pending 启用为短期记忆，或 review 短期记忆晋升为长期记忆。
+    支持任意状态流转与 tier 更新，仅限合理路径（晋升为长期需满足条件）。
 
     参数:
         memory_id: 目标记忆 ID。
@@ -336,11 +336,12 @@ def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(ge
     if has_status == has_tier:
         raise HTTPException(status_code=400, detail="必须且只能更新 status 或 tier 其中一个字段")
 
-    if body.status == "active":
-        if memory.status != "pending":
-            raise HTTPException(status_code=422, detail="仅 pending 记忆可启用")
-        memory.status = "active"
-        memory.activated_at = now
+    if has_status:
+        if body.status == "review":
+            raise HTTPException(status_code=400, detail="review 状态由系统自动流转，不支持手动设置")
+        if body.status == "active" and memory.status != "active":
+            memory.activated_at = now
+        memory.status = body.status
         memory.updated_at = now
     elif body.tier == "long":
         if memory.status != "review" or memory.tier != "short":
@@ -349,7 +350,7 @@ def update_memory(memory_id: str, body: MemoryUpdate, db: DBSession = Depends(ge
         memory.status = "active"
         memory.updated_at = now
     else:
-        raise HTTPException(status_code=400, detail="仅支持启用短期记忆或将 review 短期记忆晋升为长期")
+        raise HTTPException(status_code=400, detail="仅支持更新 status 或将 review 短期记忆晋升为长期")
 
     db.commit()
     db.refresh(memory)
