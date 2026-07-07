@@ -200,7 +200,7 @@ label {
 #view-chat {
   display: none;
   flex-direction: column;
-  height: calc(100dvh - 56px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  height: calc(100dvh - 64px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   padding: 0 14px calc(env(safe-area-inset-bottom) + 14px);
   overflow: hidden;
 }
