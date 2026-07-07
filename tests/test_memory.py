@@ -5,7 +5,7 @@ def test_create_memory(client):
         "tags": "database,sqlalchemy,config"
     })
     assert resp.status_code == 200
-    assert resp.json()["status"] == "pending"
+    assert resp.json()["status"] == "active"
 
 
 from sqlalchemy import inspect
@@ -54,31 +54,37 @@ def test_memory_feedback_logs_and_search_exposures_tables_exist(engine):
 def test_activate_memory(client):
     resp = client.post("/memory", json={"title": "测试知识", "content": "内容"})
     mem_id = resp.json()["id"]
+    assert resp.json()["status"] == "active"
+
+    resp = client.patch(f"/memory/{mem_id}", json={"status": "pending"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pending"
 
     resp = client.patch(f"/memory/{mem_id}", json={"status": "active"})
     assert resp.status_code == 200
     assert resp.json()["status"] == "active"
 
 
-def test_manual_post_memory_keeps_pending_after_startup_auto_activation(client):
-    """验证手工创建记忆仍保持 pending，未被自动提炼启用逻辑改写。"""
+def test_create_memory_defaults_to_active(client):
+    """验证创建记忆默认状态为 active，创建即生效。"""
     resp = client.post("/memory", json={
         "title": "手工记忆",
-        "content": "这条记忆由人工创建，仍应保持 pending",
+        "content": "这条记忆由模型创建，应直接处于 active 状态",
     })
 
     assert resp.status_code == 200
-    assert resp.json()["status"] == "pending"
+    assert resp.json()["status"] == "active"
     assert resp.json()["source_session_id"] is None
 
 
 def test_manual_patch_activate_memory_sets_activated_at(client):
-    """验证手工 pending->active 流转仍会写入 activated_at。"""
+    """验证手工 active->pending->active 流转仍会写入 activated_at。"""
     created = client.post("/memory", json={
         "title": "手工激活",
         "content": "这条记忆通过人工确认启用",
     }).json()
-
+    # 先降为 pending 再激活，验证 activated_at 被写入
+    client.patch(f"/memory/{created['id']}", json={"status": "pending"})
     updated = client.patch(f"/memory/{created['id']}", json={"status": "active"})
 
     assert updated.status_code == 200
@@ -263,11 +269,13 @@ def test_list_memories_filters_by_status(client):
         "title": "待审核记忆",
         "content": "这条记忆应留在 pending 列表",
     })
+    # 创建即 active，手动降为 pending 测试筛选
+    client.patch(f"/memory/{pending_resp.json()['id']}", json={"status": "pending"})
     active_resp = client.post("/memory", json={
         "title": "已启用记忆",
         "content": "这条记忆应出现在 active 列表",
     })
-    client.patch(f"/memory/{active_resp.json()['id']}", json={"status": "active"})
+    # 已经是 active，无需再 patch
 
     pending_list = client.get("/memory?status=pending")
     active_list = client.get("/memory?status=active")

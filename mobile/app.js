@@ -1091,7 +1091,16 @@ dom.chatForm.addEventListener("submit", (e) => {
 dom.memoryFilterOpen.addEventListener("click", () => setMemoryDrawer(true));
 document.getElementById("memory-select-mode-btn").addEventListener("click", enterMemorySelectMode);
 dom.memoryFilterBackdrop.addEventListener("click", () => setMemoryDrawer(false));
-dom.memoryFilterClose.addEventListener("click", () => setMemoryDrawer(false));
+dom.memoryFilterClose.addEventListener("click", () => {
+  state.memoryScope = state.draftMemoryScope;
+  state.memoryFilter = state.draftMemoryFilter;
+  state.tierFilter = state.draftMemoryFilter === "active" ? state.draftTierFilter : "all";
+  state.memorySort = state.draftMemorySort;
+  renderMemoryFilterSummary();
+  setMemoryDrawer(false);
+  saveUiState();
+  loadMemories().catch(() => {});
+});
 dom.memoryFilterPending.addEventListener("click", () => {
   state.draftMemoryFilter = "pending";
   state.draftTierFilter = "all";

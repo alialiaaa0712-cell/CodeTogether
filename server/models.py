@@ -116,7 +116,7 @@ class Memory(Base):
     title = Column(String(512), nullable=False)
     content = Column(Text, nullable=False)
     tags = Column(String(512))
-    status = Column(Enum("pending", "active", "rejected", "review"), default="pending")
+    status = Column(Enum("pending", "active", "rejected", "review"), default="active")
     tier = Column(Enum("short", "long"), default="short", nullable=False)
     updated_at = Column(Double, default=time.time)
     source_session_id = Column(String(36), ForeignKey("sessions.id"), nullable=True)

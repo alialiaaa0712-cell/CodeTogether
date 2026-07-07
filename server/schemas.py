@@ -140,7 +140,7 @@ class MemoryOut(BaseModel):
 
 
 class MemoryUpdate(BaseModel):
-    status: Optional[Literal["active", "rejected", "review"]] = None
+    status: Optional[Literal["pending", "active", "rejected", "review"]] = None
     tier: Optional[Literal["short", "long"]] = None
 
 
